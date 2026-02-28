@@ -26,10 +26,10 @@ func Execute() {
 
 func newRootCmd() *cobra.Command {
 	opts := &rootOptions{
-		statusFile: "_bmad-output/implementation-artifacts/sprint-status.yaml",
-		brain:      "glm-5",
-		workdir:    ".",
-		timeout:    2 * time.Hour,
+		statusFile: "",
+		brain:      "deterministic",
+		workdir:    "",
+		timeout:    0,
 	}
 
 	cmd := &cobra.Command{
@@ -37,11 +37,11 @@ func newRootCmd() *cobra.Command {
 		Short: "Manual loop runner for BMAD sprint stories",
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.statusFile, "status-file", opts.statusFile, "Path to sprint-status.yaml")
-	cmd.PersistentFlags().StringVar(&opts.brain, "brain", opts.brain, "Overseer brain (glm-5, deterministic)")
-	cmd.PersistentFlags().StringVar(&opts.workdir, "workdir", opts.workdir, "Working directory for copilot/git operations")
+	cmd.PersistentFlags().StringVar(&opts.statusFile, "status-file", opts.statusFile, "Path to sprint-status.yaml (default: <cwd>/_bmad-output/implementation-artifacts/sprint-status.yaml)")
+	cmd.PersistentFlags().StringVar(&opts.brain, "brain", opts.brain, "Overseer brain (default: deterministic; options: deterministic, glm-5)")
+	cmd.PersistentFlags().StringVar(&opts.workdir, "workdir", opts.workdir, "Working directory for copilot/git operations (default: inferred from status file path)")
 	cmd.PersistentFlags().StringVar(&opts.copilotModel, "copilot-model", opts.copilotModel, "Optional Copilot model override")
-	cmd.PersistentFlags().DurationVar(&opts.timeout, "timeout", opts.timeout, "Per-command timeout")
+	cmd.PersistentFlags().DurationVar(&opts.timeout, "timeout", opts.timeout, "Per-command timeout (0 disables timeout)")
 
 	cmd.AddCommand(newRunCmd(opts))
 	return cmd

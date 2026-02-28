@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -24,26 +25,29 @@ type Runner struct {
 	executor CommandExecutor
 }
 
+const defaultStatusFile = "_bmad-output/implementation-artifacts/sprint-status.yaml"
+
 func New(cfg Config) (*Runner, error) {
-	if strings.TrimSpace(cfg.Workdir) == "" {
-		cfg.Workdir = "."
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("resolve current directory: %w", err)
 	}
+
+	statusFile, err := resolveStatusFilePath(cfg.StatusFile, cwd)
+	if err != nil {
+		return nil, err
+	}
+	cfg.StatusFile = statusFile
+
+	if strings.TrimSpace(cfg.Workdir) == "" {
+		cfg.Workdir = inferWorkdirFromStatusFile(cfg.StatusFile, cwd)
+	}
+
 	absWorkdir, err := filepath.Abs(cfg.Workdir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workdir: %w", err)
 	}
 	cfg.Workdir = absWorkdir
-
-	if strings.TrimSpace(cfg.StatusFile) == "" {
-		cfg.StatusFile = "_bmad-output/implementation-artifacts/sprint-status.yaml"
-	}
-	if !filepath.IsAbs(cfg.StatusFile) {
-		cfg.StatusFile = filepath.Join(cfg.Workdir, cfg.StatusFile)
-	}
-
-	if cfg.CommandTimeout <= 0 {
-		cfg.CommandTimeout = 2 * time.Hour
-	}
 
 	selectedBrain, err := brain.New(cfg.Brain)
 	if err != nil {
@@ -106,7 +110,11 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action) (E
 	}
 	fmt.Printf("STORY: %s | STATUS(before): %s | ACTION: %s\n", storyKey, beforeStatus, action.Command)
 
-	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	commandCtx := ctx
+	cancel := func() {}
+	if r.cfg.CommandTimeout > 0 {
+		commandCtx, cancel = context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	}
 	defer cancel()
 
 	execResult, execErr := r.executor.Run(commandCtx, action)
@@ -166,4 +174,32 @@ func fallbackSummary(rawOutput string) string {
 
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+}
+
+func resolveStatusFilePath(statusFile, cwd string) (string, error) {
+	statusFile = strings.TrimSpace(statusFile)
+	if statusFile == "" {
+		statusFile = defaultStatusFile
+	}
+	if filepath.IsAbs(statusFile) {
+		return filepath.Clean(statusFile), nil
+	}
+	absolute, err := filepath.Abs(filepath.Join(cwd, statusFile))
+	if err != nil {
+		return "", fmt.Errorf("resolve status file path: %w", err)
+	}
+	return absolute, nil
+}
+
+func inferWorkdirFromStatusFile(statusFile, fallback string) string {
+	clean := filepath.Clean(statusFile)
+	marker := string(filepath.Separator) + "_bmad-output" + string(filepath.Separator)
+	switch idx := strings.Index(clean, marker); {
+	case idx > 0:
+		return clean[:idx]
+	case idx == 0:
+		return string(filepath.Separator)
+	default:
+		return fallback
+	}
 }

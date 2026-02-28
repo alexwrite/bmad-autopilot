@@ -19,10 +19,10 @@ type Brain interface {
 func New(name string) (Brain, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	switch normalized {
-	case "", "glm-5", "glm5":
-		return &GLM5Brain{fallback: DeterministicBrain{}}, nil
-	case "deterministic", "none":
+	case "", "deterministic", "none":
 		return DeterministicBrain{}, nil
+	case "glm-5", "glm5":
+		return &GLM5Brain{fallback: DeterministicBrain{}}, nil
 	default:
 		return nil, fmt.Errorf("unsupported brain %q", name)
 	}

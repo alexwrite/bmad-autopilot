@@ -10,8 +10,11 @@ go run . run
 
 Defaults:
 
-- Status file: `_bmad-output/implementation-artifacts/sprint-status.yaml`
-- Brain: `glm-5` (via `github.com/deicod/zai`; falls back to deterministic summaries when `ZAI_API_KEY` is not set)
+- Status file: inferred from current working directory as `<cwd>/_bmad-output/implementation-artifacts/sprint-status.yaml`
+- Brain: `deterministic`
+- Workdir: inferred from the status file path (the project directory before `_bmad-output/`)
+- Timeout: disabled
+- Copilot model: unset
 - Copilot execution: fresh SDK client/session per command, with `--yolo --no-ask-user -s`
 
 ## Useful flags
@@ -20,4 +23,4 @@ Defaults:
 - `--brain <glm-5|deterministic>`
 - `--workdir <path>`
 - `--copilot-model <model-id>`
-- `--timeout <duration>`
+- `--timeout <duration>` (use `0` to disable timeout)
