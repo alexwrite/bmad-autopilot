@@ -15,7 +15,8 @@ type Config struct {
 	StatusFile           string
 	Brain                string
 	Workdir              string
-	CopilotModel         string
+	ClaudeModel          string
+	ClaudeCommand        string
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
 }
@@ -58,7 +59,7 @@ func New(cfg Config) (*Runner, error) {
 	return &Runner{
 		cfg:      cfg,
 		brain:    selectedBrain,
-		executor: NewSDKExecutor(cfg.Workdir, cfg.CopilotModel),
+		executor: NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand),
 	}, nil
 }
 

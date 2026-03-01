@@ -11,12 +11,12 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 	switch normalizeStatus(status) {
 	case "backlog":
 		return []Action{
-			newAction(fmt.Sprintf("/bmad-bmm-create-story %s", storyNumber)),
-			newAction(fmt.Sprintf("/bmad-bmm-dev-story %s", storyNumber)),
+			newAction(fmt.Sprintf("Run the BMAD create-story workflow for story %s. Read the sprint plan and epics, then create a complete story file with acceptance criteria, technical context, and implementation tasks.", storyNumber)),
+			newAction(fmt.Sprintf("Run the BMAD dev-story workflow for story %s. Read the story file, implement all tasks following the acceptance criteria, write tests, and ensure the code compiles.", storyNumber)),
 		}, nil
 	case "ready-for-dev", "in-progress":
 		return []Action{
-			newAction(fmt.Sprintf("/bmad-bmm-dev-story %s", storyNumber)),
+			newAction(fmt.Sprintf("Run the BMAD dev-story workflow for story %s. Read the story file, implement all tasks following the acceptance criteria, write tests, and ensure the code compiles.", storyNumber)),
 		}, nil
 	case "review", "done":
 		return nil, nil
@@ -27,7 +27,7 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 
 func ReviewAction(storyNumber string) Action {
 	return newAction(fmt.Sprintf(
-		"/bmad-bmm-code-review %s yolo and fix findings if any, or don't if not. If none are found git commit & push, only if none are found.",
+		"Run a code review for story %s. Review all changed files for bugs, security issues, and code quality. Fix any findings. If no issues are found, git commit and push.",
 		storyNumber,
 	))
 }
@@ -39,6 +39,6 @@ func ShouldContinueReview(status string, published bool) bool {
 func newAction(prompt string) Action {
 	return Action{
 		Prompt:  prompt,
-		Command: fmt.Sprintf(`copilot --yolo --no-ask-user -s -p %q`, prompt),
+		Command: fmt.Sprintf(`claude -p %q --dangerously-skip-permissions`, prompt),
 	}
 }

@@ -12,7 +12,8 @@ type rootOptions struct {
 	statusFile        string
 	brain             string
 	workdir           string
-	copilotModel      string
+	claudeModel       string
+	claudeCommand     string
 	timeout           time.Duration
 	showCommandOutput bool
 }
@@ -30,6 +31,7 @@ func newRootCmd() *cobra.Command {
 		statusFile:        "",
 		brain:             "deterministic",
 		workdir:           "",
+		claudeCommand:     "claude",
 		timeout:           0,
 		showCommandOutput: true,
 	}
@@ -41,10 +43,11 @@ func newRootCmd() *cobra.Command {
 
 	cmd.PersistentFlags().StringVar(&opts.statusFile, "status-file", opts.statusFile, "Path to sprint-status.yaml (default: <cwd>/_bmad-output/implementation-artifacts/sprint-status.yaml)")
 	cmd.PersistentFlags().StringVar(&opts.brain, "brain", opts.brain, "Overseer brain (default: deterministic; options: deterministic, glm-5)")
-	cmd.PersistentFlags().StringVar(&opts.workdir, "workdir", opts.workdir, "Working directory for copilot/git operations (default: inferred from status file path)")
-	cmd.PersistentFlags().StringVar(&opts.copilotModel, "copilot-model", opts.copilotModel, "Optional Copilot model override")
+	cmd.PersistentFlags().StringVar(&opts.workdir, "workdir", opts.workdir, "Working directory for claude/git operations (default: inferred from status file path)")
+	cmd.PersistentFlags().StringVar(&opts.claudeModel, "claude-model", opts.claudeModel, "Optional Claude model override (e.g. claude-opus-4-6, claude-sonnet-4-6)")
+	cmd.PersistentFlags().StringVar(&opts.claudeCommand, "claude-command", opts.claudeCommand, "Path to the claude CLI binary (default: claude)")
 	cmd.PersistentFlags().DurationVar(&opts.timeout, "timeout", opts.timeout, "Per-command timeout (0 disables timeout)")
-	cmd.PersistentFlags().BoolVar(&opts.showCommandOutput, "show-command-output", opts.showCommandOutput, "Print raw Copilot output for each command (default: true)")
+	cmd.PersistentFlags().BoolVar(&opts.showCommandOutput, "show-command-output", opts.showCommandOutput, "Print raw Claude output for each command (default: true)")
 
 	cmd.AddCommand(newRunCmd(opts))
 	return cmd

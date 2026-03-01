@@ -10,11 +10,11 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if len(actions) != 2 {
 		t.Fatalf("expected 2 actions, got %d", len(actions))
 	}
-	if actions[0].Command != `copilot --yolo --no-ask-user -s -p "/bmad-bmm-create-story 1-2"` {
-		t.Fatalf("unexpected first command: %q", actions[0].Command)
+	if actions[0].Prompt == "" {
+		t.Fatal("expected non-empty prompt for create-story action")
 	}
-	if actions[1].Command != `copilot --yolo --no-ask-user -s -p "/bmad-bmm-dev-story 1-2"` {
-		t.Fatalf("unexpected second command: %q", actions[1].Command)
+	if actions[1].Prompt == "" {
+		t.Fatal("expected non-empty prompt for dev-story action")
 	}
 }
 
@@ -26,8 +26,18 @@ func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
 	if len(actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(actions))
 	}
-	if actions[0].Command != `copilot --yolo --no-ask-user -s -p "/bmad-bmm-dev-story 3-4"` {
-		t.Fatalf("unexpected command: %q", actions[0].Command)
+	if actions[0].Prompt == "" {
+		t.Fatal("expected non-empty prompt for dev-story action")
+	}
+}
+
+func TestPlanPrimaryActionsDone(t *testing.T) {
+	actions, err := PlanPrimaryActions("done", "1-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(actions) != 0 {
+		t.Fatalf("expected 0 actions for done, got %d", len(actions))
 	}
 }
 

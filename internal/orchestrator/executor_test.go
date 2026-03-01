@@ -127,3 +127,34 @@ func TestPublicationSatisfied(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractClaudeOutputJSON(t *testing.T) {
+	input := []byte(`{"result":"Story 1-2 implemented successfully.","session_id":"abc-123","is_error":false}`)
+	got := extractClaudeOutput(input)
+	if got != "Story 1-2 implemented successfully." {
+		t.Fatalf("expected result text, got %q", got)
+	}
+}
+
+func TestExtractClaudeOutputPlainText(t *testing.T) {
+	input := []byte("just plain text output\n")
+	got := extractClaudeOutput(input)
+	if got != "just plain text output" {
+		t.Fatalf("expected trimmed plain text, got %q", got)
+	}
+}
+
+func TestExtractClaudeOutputEmpty(t *testing.T) {
+	got := extractClaudeOutput([]byte(""))
+	if got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
+func TestExtractClaudeOutputError(t *testing.T) {
+	input := []byte(`{"result":"Something went wrong","session_id":"xyz","is_error":true}`)
+	got := extractClaudeOutput(input)
+	if got != "Something went wrong" {
+		t.Fatalf("expected error result text, got %q", got)
+	}
+}

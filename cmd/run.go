@@ -15,7 +15,8 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 				StatusFile:           opts.statusFile,
 				Brain:                opts.brain,
 				Workdir:              opts.workdir,
-				CopilotModel:         opts.copilotModel,
+				ClaudeModel:          opts.claudeModel,
+				ClaudeCommand:        opts.claudeCommand,
 				CommandTimeout:       opts.timeout,
 				DisableCommandOutput: !opts.showCommandOutput,
 			})

@@ -1,14 +1,14 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-
-	copilot "github.com/github/copilot-sdk/go"
 )
 
 var pushEvidencePattern = regexp.MustCompile(`(?im)(^to\s+\S+|everything up-to-date|new branch|set up to track)`)
@@ -24,62 +24,70 @@ type CommandExecutor interface {
 	Run(ctx context.Context, action Action) (ExecResult, error)
 }
 
-type SDKExecutor struct {
-	workdir      string
-	copilotModel string
+// claudeJSONResponse matches the JSON output of `claude -p --output-format json`.
+type claudeJSONResponse struct {
+	Result    string `json:"result"`
+	SessionID string `json:"session_id"`
+	IsError   bool   `json:"is_error"`
 }
 
-func NewSDKExecutor(workdir, copilotModel string) *SDKExecutor {
-	return &SDKExecutor{
+// ClaudeExecutor spawns `claude -p` as a subprocess (pattern from OpenClaw).
+type ClaudeExecutor struct {
+	workdir      string
+	claudeModel  string
+	claudeCmd    string
+	allowedTools string
+}
+
+func NewClaudeExecutor(workdir, claudeModel, claudeCmd string) *ClaudeExecutor {
+	if strings.TrimSpace(claudeCmd) == "" {
+		claudeCmd = "claude"
+	}
+	return &ClaudeExecutor{
 		workdir:      workdir,
-		copilotModel: strings.TrimSpace(copilotModel),
+		claudeModel:  strings.TrimSpace(claudeModel),
+		claudeCmd:    claudeCmd,
+		allowedTools: "Bash,Read,Write,Edit,Glob,Grep,Agent,Skill",
 	}
 }
 
-func (e *SDKExecutor) Run(ctx context.Context, action Action) (ExecResult, error) {
+func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, error) {
 	beforeRef, beforeOK := upstreamRef(ctx, e.workdir)
 
-	client := copilot.NewClient(&copilot.ClientOptions{
-		Cwd:      e.workdir,
-		LogLevel: "error",
-		CLIArgs:  []string{"--yolo", "--no-ask-user", "-s"},
-	})
-	if err := client.Start(ctx); err != nil {
-		return ExecResult{}, fmt.Errorf("start copilot client: %w", err)
+	args := []string{
+		"-p", action.Prompt,
+		"--output-format", "json",
+		"--dangerously-skip-permissions",
 	}
-	defer client.Stop()
-
-	sessionCfg := &copilot.SessionConfig{
-		WorkingDirectory:    e.workdir,
-		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
+	if e.claudeModel != "" {
+		args = append(args, "--model", e.claudeModel)
 	}
-	if e.copilotModel != "" {
-		sessionCfg.Model = e.copilotModel
+	if e.allowedTools != "" {
+		args = append(args, "--allowedTools", e.allowedTools)
 	}
 
-	session, err := client.CreateSession(ctx, sessionCfg)
-	if err != nil {
-		return ExecResult{}, fmt.Errorf("create copilot session: %w", err)
-	}
-	defer session.Destroy()
+	cmd := exec.CommandContext(ctx, e.claudeCmd, args...)
+	cmd.Dir = e.workdir
 
-	_, sendErr := session.SendAndWait(ctx, copilot.MessageOptions{
-		Prompt: action.Prompt,
-	})
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	events, eventsErr := session.GetMessages(ctx)
-	rawOutput := collectOutput(events)
-	if rawOutput == "" && sendErr != nil {
-		rawOutput = sendErr.Error()
+	runErr := cmd.Run()
+
+	rawOutput := extractClaudeOutput(stdout.Bytes())
+	if rawOutput == "" && runErr != nil {
+		rawOutput = stderr.String()
 	}
-	if rawOutput == "" && eventsErr != nil {
-		rawOutput = eventsErr.Error()
+	if rawOutput == "" {
+		rawOutput = stdout.String()
 	}
 
 	afterRef, afterOK := upstreamRef(ctx, e.workdir)
 	headRef, headOK := currentHeadRef(ctx, e.workdir)
 	clean, cleanOK := workingTreeClean(ctx, e.workdir)
 	ahead, aheadOK := aheadOfUpstream(ctx, e.workdir)
+
 	result := ExecResult{
 		RawOutput:        rawOutput,
 		PushObserved:     pushEvidencePattern.MatchString(rawOutput),
@@ -87,50 +95,25 @@ func (e *SDKExecutor) Run(ctx context.Context, action Action) (ExecResult, error
 		Published:        publicationSatisfied(clean, cleanOK, ahead, aheadOK, headRef, headOK, afterRef, afterOK),
 	}
 
-	if sendErr != nil {
-		return result, fmt.Errorf("copilot prompt failed: %w", sendErr)
+	if runErr != nil {
+		return result, fmt.Errorf("claude prompt failed (exit %v): %w", cmd.ProcessState.ExitCode(), runErr)
 	}
-	if eventsErr != nil {
-		return result, fmt.Errorf("read copilot messages: %w", eventsErr)
-	}
-
 	return result, nil
 }
 
-func collectOutput(events []copilot.SessionEvent) string {
-	lines := make([]string, 0)
-
-	appendField := func(value *string) {
-		if value == nil {
-			return
-		}
-		text := strings.TrimSpace(*value)
-		if text == "" {
-			return
-		}
-		for _, line := range strings.Split(text, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				lines = append(lines, line)
-			}
-		}
+// extractClaudeOutput parses the JSON response from `claude -p --output-format json`.
+func extractClaudeOutput(raw []byte) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ""
 	}
 
-	for _, event := range events {
-		appendField(event.Data.Content)
-		appendField(event.Data.Message)
-		appendField(event.Data.Summary)
-		appendField(event.Data.SummaryContent)
-		appendField(event.Data.PartialOutput)
-		appendField(event.Data.ProgressMessage)
-		if event.Data.Result != nil {
-			content := event.Data.Result.Content
-			appendField(&content)
-			appendField(event.Data.Result.DetailedContent)
-		}
+	var resp claudeJSONResponse
+	if err := json.Unmarshal(trimmed, &resp); err != nil {
+		// Not JSON — return raw text as-is
+		return string(trimmed)
 	}
-
-	return strings.Join(lines, "\n")
+	return strings.TrimSpace(resp.Result)
 }
 
 func upstreamRef(ctx context.Context, workdir string) (string, bool) {
