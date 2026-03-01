@@ -5,7 +5,9 @@ Manual loop runner for BMAD sprint stories, implemented as a Go Cobra CLI.
 ## Run
 
 ```bash
-go run . run
+go install github.com/dlukt/bmad-autopilot@latest
+# cd to your project root
+bmad-autopilot
 ```
 
 Defaults:
