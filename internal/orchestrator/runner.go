@@ -109,7 +109,9 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action) (E
 	if err != nil {
 		return ExecResult{}, "", err
 	}
-	fmt.Printf("STORY: %s | STATUS(before): %s | ACTION: %s\n", storyKey, beforeStatus, action.Command)
+	fmt.Printf("STORY: %s\n", storyKey)
+	fmt.Printf("STATUS(before): %s\n", beforeStatus)
+	fmt.Printf("ACTION: %s\n", action.Command)
 
 	commandCtx := ctx
 	cancel := func() {}
