@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	actions, err := PlanPrimaryActions("backlog", "1-2")
@@ -10,11 +13,17 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if len(actions) != 2 {
 		t.Fatalf("expected 2 actions, got %d", len(actions))
 	}
-	if actions[0].Prompt == "" {
-		t.Fatal("expected non-empty prompt for create-story action")
+	if actions[0].WorkflowKey != "create-story" {
+		t.Fatalf("expected first action workflow key create-story, got %q", actions[0].WorkflowKey)
 	}
-	if actions[1].Prompt == "" {
-		t.Fatal("expected non-empty prompt for dev-story action")
+	if actions[1].WorkflowKey != "dev-story" {
+		t.Fatalf("expected second action workflow key dev-story, got %q", actions[1].WorkflowKey)
+	}
+	if !strings.Contains(actions[0].Prompt, "#yolo") {
+		t.Fatal("expected yolo mode in create-story prompt")
+	}
+	if !strings.Contains(actions[1].Prompt, "#yolo") {
+		t.Fatal("expected yolo mode in dev-story prompt")
 	}
 }
 
@@ -26,8 +35,8 @@ func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
 	if len(actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(actions))
 	}
-	if actions[0].Prompt == "" {
-		t.Fatal("expected non-empty prompt for dev-story action")
+	if actions[0].WorkflowKey != "dev-story" {
+		t.Fatalf("expected workflow key dev-story, got %q", actions[0].WorkflowKey)
 	}
 }
 
@@ -38,6 +47,16 @@ func TestPlanPrimaryActionsDone(t *testing.T) {
 	}
 	if len(actions) != 0 {
 		t.Fatalf("expected 0 actions for done, got %d", len(actions))
+	}
+}
+
+func TestReviewActionWorkflowKey(t *testing.T) {
+	action := ReviewAction("1-2")
+	if action.WorkflowKey != "code-review" {
+		t.Fatalf("expected workflow key code-review, got %q", action.WorkflowKey)
+	}
+	if !strings.Contains(action.Prompt, "#yolo") {
+		t.Fatal("expected yolo mode in review prompt")
 	}
 }
 

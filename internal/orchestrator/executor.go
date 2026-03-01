@@ -31,7 +31,7 @@ type claudeJSONResponse struct {
 	IsError   bool   `json:"is_error"`
 }
 
-// ClaudeExecutor spawns `claude -p` as a subprocess (pattern from OpenClaw).
+// ClaudeExecutor spawns `claude -p` as a subprocess with BMAD context injection.
 type ClaudeExecutor struct {
 	workdir      string
 	claudeModel  string
@@ -64,6 +64,17 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	}
 	if e.allowedTools != "" {
 		args = append(args, "--allowedTools", e.allowedTools)
+	}
+
+	// Load and inject BMAD context if workflow key is set
+	if action.WorkflowKey != "" {
+		bmadCtx, err := LoadBMADContext(e.workdir, action.WorkflowKey)
+		if err != nil {
+			return ExecResult{}, fmt.Errorf("load BMAD context for %q: %w", action.WorkflowKey, err)
+		}
+		if bmadCtx != nil && bmadCtx.HasContent() {
+			args = append(args, "--append-system-prompt", bmadCtx.SystemPrompt())
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, e.claudeCmd, args...)
@@ -110,7 +121,6 @@ func extractClaudeOutput(raw []byte) string {
 
 	var resp claudeJSONResponse
 	if err := json.Unmarshal(trimmed, &resp); err != nil {
-		// Not JSON — return raw text as-is
 		return string(trimmed)
 	}
 	return strings.TrimSpace(resp.Result)

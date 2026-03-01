@@ -3,20 +3,30 @@ package orchestrator
 import "fmt"
 
 type Action struct {
-	Prompt  string
-	Command string
+	Prompt      string
+	Command     string
+	WorkflowKey string // maps to BMAD workflow in workflowRegistry
 }
 
 func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 	switch normalizeStatus(status) {
 	case "backlog":
 		return []Action{
-			newAction(fmt.Sprintf("Run the BMAD create-story workflow for story %s. Read the sprint plan and epics, then create a complete story file with acceptance criteria, technical context, and implementation tasks.", storyNumber)),
-			newAction(fmt.Sprintf("Run the BMAD dev-story workflow for story %s. Read the story file, implement all tasks following the acceptance criteria, write tests, and ensure the code compiles.", storyNumber)),
+			newAction(
+				"create-story",
+				fmt.Sprintf("Execute the create-story workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Auto-complete all steps autonomously as an expert Scrum Master.", storyNumber),
+			),
+			newAction(
+				"dev-story",
+				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.", storyNumber),
+			),
 		}, nil
 	case "ready-for-dev", "in-progress":
 		return []Action{
-			newAction(fmt.Sprintf("Run the BMAD dev-story workflow for story %s. Read the story file, implement all tasks following the acceptance criteria, write tests, and ensure the code compiles.", storyNumber)),
+			newAction(
+				"dev-story",
+				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.", storyNumber),
+			),
 		}, nil
 	case "review", "done":
 		return nil, nil
@@ -26,19 +36,20 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 }
 
 func ReviewAction(storyNumber string) Action {
-	return newAction(fmt.Sprintf(
-		"Run a code review for story %s. Review all changed files for bugs, security issues, and code quality. Fix any findings. If no issues are found, git commit and push.",
-		storyNumber,
-	))
+	return newAction(
+		"code-review",
+		fmt.Sprintf("Execute the code-review workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Review all changed files, fix any findings. If no issues are found, git commit and push.", storyNumber),
+	)
 }
 
 func ShouldContinueReview(status string, published bool) bool {
 	return normalizeStatus(status) != "done" || !published
 }
 
-func newAction(prompt string) Action {
+func newAction(workflowKey, prompt string) Action {
 	return Action{
-		Prompt:  prompt,
-		Command: fmt.Sprintf(`claude -p %q --dangerously-skip-permissions`, prompt),
+		Prompt:      prompt,
+		Command:     fmt.Sprintf("claude -p [%s] --dangerously-skip-permissions --append-system-prompt [BMAD context]", workflowKey),
+		WorkflowKey: workflowKey,
 	}
 }
