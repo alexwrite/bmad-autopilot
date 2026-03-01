@@ -12,11 +12,12 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 		Short: "Run one-story-at-a-time manual loop",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			runner, err := orchestrator.New(orchestrator.Config{
-				StatusFile:     opts.statusFile,
-				Brain:          opts.brain,
-				Workdir:        opts.workdir,
-				CopilotModel:   opts.copilotModel,
-				CommandTimeout: opts.timeout,
+				StatusFile:           opts.statusFile,
+				Brain:                opts.brain,
+				Workdir:              opts.workdir,
+				CopilotModel:         opts.copilotModel,
+				CommandTimeout:       opts.timeout,
+				DisableCommandOutput: !opts.showCommandOutput,
 			})
 			if err != nil {
 				return err

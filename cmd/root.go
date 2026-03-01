@@ -9,11 +9,12 @@ import (
 )
 
 type rootOptions struct {
-	statusFile   string
-	brain        string
-	workdir      string
-	copilotModel string
-	timeout      time.Duration
+	statusFile        string
+	brain             string
+	workdir           string
+	copilotModel      string
+	timeout           time.Duration
+	showCommandOutput bool
 }
 
 // Execute runs the CLI entrypoint.
@@ -26,10 +27,11 @@ func Execute() {
 
 func newRootCmd() *cobra.Command {
 	opts := &rootOptions{
-		statusFile: "",
-		brain:      "deterministic",
-		workdir:    "",
-		timeout:    0,
+		statusFile:        "",
+		brain:             "deterministic",
+		workdir:           "",
+		timeout:           0,
+		showCommandOutput: true,
 	}
 
 	cmd := &cobra.Command{
@@ -42,6 +44,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.workdir, "workdir", opts.workdir, "Working directory for copilot/git operations (default: inferred from status file path)")
 	cmd.PersistentFlags().StringVar(&opts.copilotModel, "copilot-model", opts.copilotModel, "Optional Copilot model override")
 	cmd.PersistentFlags().DurationVar(&opts.timeout, "timeout", opts.timeout, "Per-command timeout (0 disables timeout)")
+	cmd.PersistentFlags().BoolVar(&opts.showCommandOutput, "show-command-output", opts.showCommandOutput, "Print raw Copilot output for each command (default: true)")
 
 	cmd.AddCommand(newRunCmd(opts))
 	return cmd

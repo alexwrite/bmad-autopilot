@@ -12,11 +12,12 @@ import (
 )
 
 type Config struct {
-	StatusFile     string
-	Brain          string
-	Workdir        string
-	CopilotModel   string
-	CommandTimeout time.Duration
+	StatusFile           string
+	Brain                string
+	Workdir              string
+	CopilotModel         string
+	CommandTimeout       time.Duration
+	DisableCommandOutput bool
 }
 
 type Runner struct {
@@ -118,6 +119,10 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action) (E
 	defer cancel()
 
 	execResult, execErr := r.executor.Run(commandCtx, action)
+	if !r.cfg.DisableCommandOutput {
+		r.printRawOutput(execResult.RawOutput)
+	}
+
 	resultLine := r.summarizeResult(commandCtx, action.Command, execResult.RawOutput)
 	if execErr != nil {
 		if resultLine == "" {
@@ -174,6 +179,16 @@ func fallbackSummary(rawOutput string) string {
 
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+}
+
+func (r *Runner) printRawOutput(rawOutput string) {
+	trimmed := strings.TrimSpace(rawOutput)
+	if trimmed == "" {
+		fmt.Println("OUTPUT: <no output>")
+		return
+	}
+	fmt.Println("OUTPUT:")
+	fmt.Println(trimmed)
 }
 
 func resolveStatusFilePath(statusFile, cwd string) (string, error) {

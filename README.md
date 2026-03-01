@@ -18,6 +18,7 @@ Defaults:
 - Timeout: disabled
 - Copilot model: unset
 - Copilot execution: fresh SDK client/session per command, with `--yolo --no-ask-user -s`
+- Logging: each action prints the raw Copilot output block plus a one-line summarized `RESULT` (enabled by default)
 
 ## Useful flags
 
@@ -25,4 +26,5 @@ Defaults:
 - `--brain <glm-5|deterministic>`
 - `--workdir <path>`
 - `--copilot-model <model-id>`
+- `--show-command-output <true|false>` (default: `true`)
 - `--timeout <duration>` (use `0` to disable timeout)
