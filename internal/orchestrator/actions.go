@@ -27,7 +27,7 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 
 func ReviewAction(storyNumber string) Action {
 	return newAction(fmt.Sprintf(
-		"/bmad-bmm-code-review %s yolo and fix findings if any, or don't if not. If none are found git commit & push, only if none are found.",
+		"/bmad-bmm-code-review %s yolo and fix findings if any, or don't if not. If none are found git commit & push, only if none are found. If there are any findings do not set the story status to done.",
 		storyNumber,
 	))
 }
