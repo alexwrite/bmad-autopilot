@@ -32,8 +32,8 @@ func ReviewAction(storyNumber string) Action {
 	))
 }
 
-func ShouldContinueReview(status string, pushEvidence bool) bool {
-	return normalizeStatus(status) != "done" || !pushEvidence
+func ShouldContinueReview(status string, published bool) bool {
+	return normalizeStatus(status) != "done" || !published
 }
 
 func newAction(prompt string) Action {

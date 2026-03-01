@@ -97,7 +97,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if !ShouldContinueReview(afterStatus, result.PushObserved || result.UpstreamAdvanced) {
+			if !ShouldContinueReview(afterStatus, result.Published) {
 				break
 			}
 		}

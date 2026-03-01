@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -16,6 +17,7 @@ type ExecResult struct {
 	RawOutput        string
 	PushObserved     bool
 	UpstreamAdvanced bool
+	Published        bool
 }
 
 type CommandExecutor interface {
@@ -75,10 +77,14 @@ func (e *SDKExecutor) Run(ctx context.Context, action Action) (ExecResult, error
 	}
 
 	afterRef, afterOK := upstreamRef(ctx, e.workdir)
+	headRef, headOK := currentHeadRef(ctx, e.workdir)
+	clean, cleanOK := workingTreeClean(ctx, e.workdir)
+	ahead, aheadOK := aheadOfUpstream(ctx, e.workdir)
 	result := ExecResult{
 		RawOutput:        rawOutput,
 		PushObserved:     pushEvidencePattern.MatchString(rawOutput),
 		UpstreamAdvanced: upstreamChanged(beforeRef, beforeOK, afterRef, afterOK),
+		Published:        publicationSatisfied(clean, cleanOK, ahead, aheadOK, headRef, headOK, afterRef, afterOK),
 	}
 
 	if sendErr != nil {
@@ -141,4 +147,59 @@ func upstreamChanged(before string, beforeOK bool, after string, afterOK bool) b
 		return true
 	}
 	return beforeOK && afterOK && before != after
+}
+
+func currentHeadRef(ctx context.Context, workdir string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", "-C", workdir, "rev-parse", "--verify", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(output)), true
+}
+
+func workingTreeClean(ctx context.Context, workdir string) (bool, bool) {
+	cmd := exec.CommandContext(ctx, "git", "-C", workdir, "status", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, false
+	}
+	return strings.TrimSpace(string(output)) == "", true
+}
+
+func aheadOfUpstream(ctx context.Context, workdir string) (int, bool) {
+	cmd := exec.CommandContext(ctx, "git", "-C", workdir, "rev-list", "--count", "@{u}..HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, false
+	}
+
+	count, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil {
+		return 0, false
+	}
+
+	return count, true
+}
+
+func publicationSatisfied(
+	clean bool,
+	cleanOK bool,
+	ahead int,
+	aheadOK bool,
+	headRef string,
+	headOK bool,
+	upstreamRef string,
+	upstreamOK bool,
+) bool {
+	if !cleanOK || !clean {
+		return false
+	}
+	if !headOK || !upstreamOK {
+		return false
+	}
+	if !aheadOK || ahead != 0 {
+		return false
+	}
+	return headRef == upstreamRef
 }
