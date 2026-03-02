@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dlukt/bmad-autopilot/cmd"
+import "github.com/alexwrite/bmad-autopilot/cmd"
 
 func main() {
 	cmd.Execute()

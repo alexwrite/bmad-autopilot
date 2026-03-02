@@ -1,4 +1,4 @@
-module github.com/dlukt/bmad-autopilot
+module github.com/alexwrite/bmad-autopilot
 
 go 1.25.6
 

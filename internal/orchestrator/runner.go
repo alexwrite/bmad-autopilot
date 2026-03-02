@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dlukt/bmad-autopilot/internal/brain"
+	"github.com/alexwrite/bmad-autopilot/internal/brain"
 )
 
 type Config struct {

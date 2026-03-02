@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/dlukt/bmad-autopilot/internal/orchestrator"
+	"github.com/alexwrite/bmad-autopilot/internal/orchestrator"
 
 	"github.com/spf13/cobra"
 )
