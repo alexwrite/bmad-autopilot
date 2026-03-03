@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	"github.com/alexwrite/bmad-autopilot/internal/brain"
 )
 
@@ -93,14 +95,31 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		reviewAction := ReviewAction(storyNumber)
-		for {
-			result, afterStatus, err := r.runStep(ctx, story.Key, reviewAction)
+		for round := 1; round <= MaxReviewRounds; round++ {
+			_, afterStatus, err := r.runStep(ctx, story.Key, reviewAction)
 			if err != nil {
+				if errors.Is(err, ErrAuthExpired) {
+					fmt.Printf("AUTH: token expired during review round %d — stopping\n", round)
+					return err
+				}
 				return err
 			}
-			if !ShouldContinueReview(afterStatus, result.Published) {
+			if !ShouldContinueReview(afterStatus) {
+				fmt.Printf("REVIEW: story %s done after %d round(s)\n", story.Key, round)
 				break
 			}
+			if round == MaxReviewRounds {
+				fmt.Printf("REVIEW: max rounds (%d) reached for story %s — moving on\n", MaxReviewRounds, story.Key)
+			}
+		}
+
+		// Push any remaining unpushed commits (e.g. status YAML update)
+		pushed, err := EnsurePushed(ctx, r.cfg.Workdir)
+		if err != nil {
+			return fmt.Errorf("ensure pushed after review: %w", err)
+		}
+		if pushed {
+			fmt.Printf("PUSH: pushed remaining commits for story %s\n", story.Key)
 		}
 	}
 }

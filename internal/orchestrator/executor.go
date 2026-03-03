@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -12,6 +13,9 @@ import (
 )
 
 var pushEvidencePattern = regexp.MustCompile(`(?im)(^to\s+\S+|everything up-to-date|new branch|set up to track)`)
+
+// ErrAuthExpired signals that the Claude API token has expired.
+var ErrAuthExpired = errors.New("authentication token expired")
 
 type ExecResult struct {
 	RawOutput        string
@@ -107,9 +111,20 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	}
 
 	if runErr != nil {
+		if isAuthError(rawOutput) || isAuthError(stderr.String()) {
+			return result, fmt.Errorf("%w: %v", ErrAuthExpired, runErr)
+		}
 		return result, fmt.Errorf("claude prompt failed (exit %v): %w", cmd.ProcessState.ExitCode(), runErr)
 	}
 	return result, nil
+}
+
+// isAuthError checks if the output contains an authentication/token expiry error.
+func isAuthError(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "oauth token has expired") ||
+		strings.Contains(lower, "authentication_error") ||
+		(strings.Contains(lower, "401") && strings.Contains(lower, "token"))
 }
 
 // extractClaudeOutput parses the JSON response from `claude -p --output-format json`.
@@ -173,6 +188,22 @@ func aheadOfUpstream(ctx context.Context, workdir string) (int, bool) {
 	}
 
 	return count, true
+}
+
+// EnsurePushed pushes to the upstream branch if there are unpushed commits.
+// Returns true if a push was performed, false if already in sync.
+func EnsurePushed(ctx context.Context, workdir string) (bool, error) {
+	ahead, ok := aheadOfUpstream(ctx, workdir)
+	if !ok || ahead == 0 {
+		return false, nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", workdir, "push")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("git push failed: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return true, nil
 }
 
 func publicationSatisfied(

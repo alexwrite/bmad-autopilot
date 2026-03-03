@@ -158,3 +158,44 @@ func TestExtractClaudeOutputError(t *testing.T) {
 		t.Fatalf("expected error result text, got %q", got)
 	}
 }
+
+func TestIsAuthError(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{
+			name:   "oauth token expired",
+			output: `Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired."}}`,
+			want:   true,
+		},
+		{
+			name:   "authentication_error keyword",
+			output: `{"type":"error","error":{"type":"authentication_error","message":"invalid token"}}`,
+			want:   true,
+		},
+		{
+			name:   "401 with token mention",
+			output: `Error: 401 Unauthorized - token invalid`,
+			want:   true,
+		},
+		{
+			name:   "normal error no auth issue",
+			output: `Error: command failed with exit code 1`,
+			want:   false,
+		},
+		{
+			name:   "empty output",
+			output: "",
+			want:   false,
+		},
+	}
+
+	for _, tt := range cases {
+		got := isAuthError(tt.output)
+		if got != tt.want {
+			t.Errorf("%s: isAuthError(%q) = %v, want %v", tt.name, tt.output, got, tt.want)
+		}
+	}
+}

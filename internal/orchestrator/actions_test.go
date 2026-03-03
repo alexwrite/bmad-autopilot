@@ -25,6 +25,19 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if !strings.Contains(actions[1].Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in dev-story prompt")
 	}
+	// Verify commit instructions
+	if !strings.Contains(actions[0].Prompt, "git add") || !strings.Contains(actions[0].Prompt, "commit") {
+		t.Fatal("expected git add and commit instruction in create-story prompt")
+	}
+	if !strings.Contains(actions[1].Prompt, "git add") || !strings.Contains(actions[1].Prompt, "commit") {
+		t.Fatal("expected git add and commit instruction in dev-story prompt")
+	}
+	if strings.Contains(actions[0].Prompt, "push") {
+		t.Fatal("create-story prompt should not mention push")
+	}
+	if strings.Contains(actions[1].Prompt, "push") {
+		t.Fatal("dev-story prompt should not mention push")
+	}
 }
 
 func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
@@ -58,16 +71,37 @@ func TestReviewActionWorkflowKey(t *testing.T) {
 	if !strings.Contains(action.Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in review prompt")
 	}
+	if !strings.Contains(action.Prompt, "git add") || !strings.Contains(action.Prompt, "commit") {
+		t.Fatal("expected git add and commit instruction in code-review prompt")
+	}
+	if !strings.Contains(action.Prompt, "push") {
+		t.Fatal("expected push instruction in code-review prompt")
+	}
 }
 
 func TestShouldContinueReview(t *testing.T) {
-	if !ShouldContinueReview("review", false) {
-		t.Fatal("expected review status to continue")
+	tests := []struct {
+		name   string
+		status string
+		want   bool
+	}{
+		{"review status continues", "review", true},
+		{"in-progress continues", "in-progress", true},
+		{"backlog continues", "backlog", true},
+		{"done stops", "done", false},
+		{"Done case-insensitive stops", "Done", false},
+		{"DONE uppercase stops", "DONE", false},
 	}
-	if !ShouldContinueReview("done", false) {
-		t.Fatal("expected done without push evidence to continue")
+	for _, tt := range tests {
+		got := ShouldContinueReview(tt.status)
+		if got != tt.want {
+			t.Errorf("%s: ShouldContinueReview(%q) = %v, want %v", tt.name, tt.status, got, tt.want)
+		}
 	}
-	if ShouldContinueReview("done", true) {
-		t.Fatal("expected done with push evidence to stop")
+}
+
+func TestMaxReviewRoundsIsPositive(t *testing.T) {
+	if MaxReviewRounds < 1 {
+		t.Fatalf("MaxReviewRounds must be >= 1, got %d", MaxReviewRounds)
 	}
 }

@@ -2,6 +2,10 @@ package orchestrator
 
 import "fmt"
 
+// MaxReviewRounds is the safety limit for consecutive code-review iterations
+// on a single story. Prevents infinite loops when reviews keep finding issues.
+const MaxReviewRounds = 3
+
 type Action struct {
 	Prompt      string
 	Command     string
@@ -14,18 +18,18 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 		return []Action{
 			newAction(
 				"create-story",
-				fmt.Sprintf("Execute the create-story workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Auto-complete all steps autonomously as an expert Scrum Master.", storyNumber),
+				fmt.Sprintf("Execute the create-story workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Auto-complete all steps autonomously as an expert Scrum Master. When done, git add all changed files and commit with message 'chore(%s): create-story completed'.", storyNumber, storyNumber),
 			),
 			newAction(
 				"dev-story",
-				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.", storyNumber),
+				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. When done, git add all changed files and commit with message 'chore(%s): dev-story completed'.", storyNumber, storyNumber),
 			),
 		}, nil
 	case "ready-for-dev", "in-progress":
 		return []Action{
 			newAction(
 				"dev-story",
-				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.", storyNumber),
+				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. When done, git add all changed files and commit with message 'chore(%s): dev-story completed'.", storyNumber, storyNumber),
 			),
 		}, nil
 	case "review", "done":
@@ -38,12 +42,17 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 func ReviewAction(storyNumber string) Action {
 	return newAction(
 		"code-review",
-		fmt.Sprintf("Execute the code-review workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Review all changed files, fix any findings. If no issues are found, git commit and push.", storyNumber),
+		fmt.Sprintf("Execute the code-review workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Review all changed files, fix any findings. When done, git add all changed files and commit with message 'chore(%s): code-review completed', then push.", storyNumber, storyNumber),
 	)
 }
 
-func ShouldContinueReview(status string, published bool) bool {
-	return normalizeStatus(status) != "done" || !published
+// ShouldContinueReview returns true if the review loop should keep running.
+// Once the story status reaches "done", the loop stops unconditionally.
+// The published flag is no longer used as exit criterion because the BMAD
+// workflow commits the status YAML update after the push, leaving the repo
+// 1 commit ahead of upstream — which made the old check loop forever.
+func ShouldContinueReview(status string) bool {
+	return normalizeStatus(status) != "done"
 }
 
 func newAction(workflowKey, prompt string) Action {
