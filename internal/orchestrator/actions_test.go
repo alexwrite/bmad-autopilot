@@ -25,12 +25,12 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if !strings.Contains(actions[1].Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in dev-story prompt")
 	}
-	// Verify commit instructions are descriptive
-	if !strings.Contains(actions[0].Prompt, "DESCRIPTIVE") {
-		t.Fatal("expected DESCRIPTIVE commit instruction in create-story prompt")
+	// Verify commit prefix format
+	if !strings.Contains(actions[0].Prompt, `"create(1-2): `) {
+		t.Fatal("expected create(story) commit prefix in create-story prompt")
 	}
-	if !strings.Contains(actions[1].Prompt, "DESCRIPTIVE") {
-		t.Fatal("expected DESCRIPTIVE commit instruction in dev-story prompt")
+	if !strings.Contains(actions[1].Prompt, `"dev(1-2): `) {
+		t.Fatal("expected dev(story) commit prefix in dev-story prompt")
 	}
 	// Verify status update instructions
 	if !strings.Contains(actions[0].Prompt, "sprint-status.yaml") {
@@ -72,8 +72,8 @@ func TestReviewActionWorkflowKey(t *testing.T) {
 	if !strings.Contains(action.Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in review prompt")
 	}
-	if !strings.Contains(action.Prompt, "DESCRIPTIVE") {
-		t.Fatal("expected DESCRIPTIVE commit instruction in code-review prompt")
+	if !strings.Contains(action.Prompt, `"review(1-2): `) {
+		t.Fatal("expected review(story) commit prefix in code-review prompt")
 	}
 	if !strings.Contains(action.Prompt, "sprint-status.yaml") {
 		t.Fatal("expected status update instruction in code-review prompt")
@@ -118,5 +118,28 @@ func TestMaxInvocationsPerStoryIsPositive(t *testing.T) {
 func TestMaxConsecutiveBlockedIsPositive(t *testing.T) {
 	if MaxConsecutiveBlocked < 1 {
 		t.Fatalf("MaxConsecutiveBlocked must be >= 1, got %d", MaxConsecutiveBlocked)
+	}
+}
+
+func TestCommitPrefixesAreDistinct(t *testing.T) {
+	create := PlanPrimaryActions
+	actions, _ := create("backlog", "2-1")
+	review := ReviewAction("2-1")
+
+	prefixes := map[string]bool{}
+	for _, a := range actions {
+		if strings.Contains(a.Prompt, `"create(`) {
+			prefixes["create"] = true
+		}
+		if strings.Contains(a.Prompt, `"dev(`) {
+			prefixes["dev"] = true
+		}
+	}
+	if strings.Contains(review.Prompt, `"review(`) {
+		prefixes["review"] = true
+	}
+
+	if len(prefixes) != 3 {
+		t.Fatalf("expected 3 distinct commit prefixes (create, dev, review), got %d", len(prefixes))
 	}
 }

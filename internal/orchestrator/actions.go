@@ -45,9 +45,10 @@ Follow the workflow engine (workflow.xml) to process the workflow configuration 
 Review all changed files and fix any findings.
 
 COMMIT RULES:
-- If you made fixes, git add and commit with a DESCRIPTIVE conventional commit message.
-  Example: "fix(1-2): correct contrast ratio for primary-dark token"
-  Example: "refactor(1-2): extract menu card into reusable component"
+- ALL commit messages MUST start with "review(%s): " followed by a description.
+- If you made fixes, git add and commit with a DESCRIPTIVE message.
+  Example: "review(%s): fix contrast ratio for primary-dark token"
+  Example: "review(%s): extract menu card into reusable component"
 - Do NOT use generic messages like "code-review completed".
 - Describe WHAT you actually changed, not that you reviewed.
 - If no changes were needed, do NOT create an empty commit.
@@ -56,8 +57,8 @@ STATUS UPDATE:
 - After review, update sprint-status.yaml for this story:
   - If no issues found or all fixes applied: set status to "done"
   - If you found issues but could not fix them: set status to "blocked"
-- Commit the status update separately: "chore(%s): update status to [new-status]"
-- Then push all commits.`, storyNumber, storyNumber),
+- Commit the status update separately: "review(%s): update status to [new-status]"
+- Then push all commits.`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
 	)
 }
 
@@ -76,14 +77,14 @@ Follow the workflow engine (workflow.xml) to process the workflow configuration 
 Auto-complete all steps autonomously as an expert Scrum Master.
 
 COMMIT RULES:
-- When done, git add all changed files and commit with a DESCRIPTIVE message.
-  Example: "chore(%s): create story spec with acceptance criteria and task breakdown"
+- ALL commit messages MUST start with "create(%s): " followed by a description.
+  Example: "create(%s): define story spec with 6 acceptance criteria and task breakdown"
 - Do NOT use generic messages like "create-story completed".
 - Describe what the story spec contains.
 
 STATUS UPDATE:
 - Update sprint-status.yaml: set this story's status to "ready-for-dev"
-- Commit the status update separately: "chore(%s): update status to ready-for-dev"`, storyNumber, storyNumber, storyNumber),
+- Commit the status update separately: "create(%s): update status to ready-for-dev"`, storyNumber, storyNumber, storyNumber, storyNumber),
 	)
 }
 
@@ -96,16 +97,16 @@ Write tests for each task. Mark tasks [x] only when tests pass.
 Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
 
 COMMIT RULES:
+- ALL commit messages MUST start with "dev(%s): " followed by a description.
 - Commit after each logical unit of work (not one giant commit at the end).
-- Use DESCRIPTIVE conventional commit messages.
-  Example: "feat(%s): implement Tailwind @theme tokens with Maillard palette"
-  Example: "feat(%s): add responsive pizza card grid component"
+  Example: "dev(%s): implement BaseLayout with header, main and footer landmarks"
+  Example: "dev(%s): add responsive navigation with glassmorphism effect"
 - Do NOT use generic messages like "dev-story completed".
 - Describe WHAT you implemented.
 
 STATUS UPDATE:
 - When all tasks are done, update sprint-status.yaml: set this story's status to "review"
-- Commit the status update separately: "chore(%s): update status to review"`, storyNumber, storyNumber, storyNumber, storyNumber),
+- Commit the status update separately: "dev(%s): update status to review"`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
 	)
 }
 
