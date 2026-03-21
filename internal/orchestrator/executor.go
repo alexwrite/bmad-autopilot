@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +20,7 @@ var ErrAuthExpired = errors.New("authentication token expired")
 
 type ExecResult struct {
 	RawOutput        string
+	FullStream       string // complete stream-json output (thinking, tool calls, text)
 	PushObserved     bool
 	UpstreamAdvanced bool
 	Published        bool
@@ -26,6 +28,27 @@ type ExecResult struct {
 
 type CommandExecutor interface {
 	Run(ctx context.Context, action Action) (ExecResult, error)
+}
+
+// streamEvent represents a single event from stream-json output.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"message"`
+	ContentBlock struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Thinking string `json:"thinking"`
+	} `json:"content_block"`
+	Delta struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Thinking string `json:"thinking"`
+	} `json:"delta"`
+	Result    string `json:"result"`
+	SessionID string `json:"session_id"`
 }
 
 // claudeJSONResponse matches the JSON output of `claude -p --output-format json`.
@@ -60,7 +83,8 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 
 	args := []string{
 		"-p", action.Prompt,
-		"--output-format", "json",
+		"--output-format", "stream-json",
+		"--verbose",
 		"--dangerously-skip-permissions",
 	}
 	if e.claudeModel != "" {
@@ -90,12 +114,17 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 
 	runErr := cmd.Run()
 
-	rawOutput := extractClaudeOutput(stdout.Bytes())
+	fullStream := stdout.String()
+	rawOutput := extractResultFromStream(fullStream)
+	if rawOutput == "" {
+		// Fallback: try parsing as single JSON (in case stream-json isn't supported)
+		rawOutput = extractClaudeOutput(stdout.Bytes())
+	}
 	if rawOutput == "" && runErr != nil {
 		rawOutput = stderr.String()
 	}
 	if rawOutput == "" {
-		rawOutput = stdout.String()
+		rawOutput = fullStream
 	}
 
 	afterRef, afterOK := upstreamRef(ctx, e.workdir)
@@ -103,20 +132,61 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	clean, cleanOK := workingTreeClean(ctx, e.workdir)
 	ahead, aheadOK := aheadOfUpstream(ctx, e.workdir)
 
+	allOutput := fullStream + "\n" + stderr.String()
+
 	result := ExecResult{
 		RawOutput:        rawOutput,
-		PushObserved:     pushEvidencePattern.MatchString(rawOutput),
+		FullStream:       fullStream,
+		PushObserved:     pushEvidencePattern.MatchString(allOutput),
 		UpstreamAdvanced: upstreamChanged(beforeRef, beforeOK, afterRef, afterOK),
 		Published:        publicationSatisfied(clean, cleanOK, ahead, aheadOK, headRef, headOK, afterRef, afterOK),
 	}
 
 	if runErr != nil {
-		if isAuthError(rawOutput) || isAuthError(stderr.String()) {
+		if isAuthError(allOutput) {
 			return result, fmt.Errorf("%w: %v", ErrAuthExpired, runErr)
 		}
 		return result, fmt.Errorf("claude prompt failed (exit %v): %w", cmd.ProcessState.ExitCode(), runErr)
 	}
 	return result, nil
+}
+
+// extractResultFromStream parses stream-json output and extracts the final result text.
+// Also concatenates all assistant text content blocks.
+func extractResultFromStream(stream string) string {
+	var resultText string
+	var textParts []string
+
+	scanner := bufio.NewScanner(strings.NewReader(stream))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var event streamEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		// Capture the final result field (last message)
+		if event.Result != "" {
+			resultText = event.Result
+		}
+
+		// Accumulate text deltas
+		if event.Delta.Text != "" {
+			textParts = append(textParts, event.Delta.Text)
+		}
+	}
+
+	if resultText != "" {
+		return strings.TrimSpace(resultText)
+	}
+	if len(textParts) > 0 {
+		return strings.TrimSpace(strings.Join(textParts, ""))
+	}
+	return ""
 }
 
 // isAuthError checks if the output contains an authentication/token expiry error.

@@ -159,8 +159,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 			return "", err
 		}
 
-		// Save output and result
+		// Save output, stream, and result
 		r.log.SaveOutput(action.WorkflowKey, 0, result.RawOutput)
+		r.log.SaveStream(action.WorkflowKey, 0, result.FullStream)
 		summary := r.summarizeResult(ctx, action.Command, result.RawOutput)
 		stepResult := NewStepResult(story.Key, action.WorkflowKey, beforeStatus, afterStatus, summary, result.RawOutput)
 		r.log.SaveResult(action.WorkflowKey, 0, stepResult)
@@ -197,8 +198,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 			return "", err
 		}
 
-		// Save output and result
+		// Save output, stream, and result
 		r.log.SaveOutput("code-review", round, result.RawOutput)
+		r.log.SaveStream("code-review", round, result.FullStream)
 		summary := r.summarizeResult(ctx, reviewAction.Command, result.RawOutput)
 		stepResult := NewStepResult(story.Key, "code-review", beforeStatus, afterStatus, summary, result.RawOutput)
 		stepResult.Round = round
