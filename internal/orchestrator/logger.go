@@ -110,7 +110,8 @@ func (l *RunLogger) SaveOutput(workflowKey string, round int, rawOutput string) 
 	return os.WriteFile(filepath.Join(dir, "output.txt"), []byte(rawOutput), 0644)
 }
 
-// SaveStream saves the full stream-json output (thinking, tool calls, text).
+// SaveStream saves the full stream-json output (thinking, tool calls, text)
+// and generates a human-readable markdown version.
 func (l *RunLogger) SaveStream(workflowKey string, round int, stream string) error {
 	if stream == "" {
 		return nil
@@ -119,7 +120,13 @@ func (l *RunLogger) SaveStream(workflowKey string, round int, stream string) err
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "stream.jsonl"), []byte(stream), 0644)
+	jsonlPath := filepath.Join(dir, "stream.jsonl")
+	if err := os.WriteFile(jsonlPath, []byte(stream), 0644); err != nil {
+		return err
+	}
+	// Generate readable version (best-effort, non-fatal)
+	_ = FormatStream(jsonlPath)
+	return nil
 }
 
 // SaveResult saves a structured result as JSON.
