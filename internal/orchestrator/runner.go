@@ -145,15 +145,20 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 			return "", err
 		}
 
-		// Call judge to evaluate and ensure status transition
-		if err := r.judgeAndTransition(ctx, story.Key, action.WorkflowKey, result.RawOutput); err != nil {
-			if errors.Is(err, ErrAuthExpired) {
+		// Check if Claude updated the status itself
+		currentStatus, _ := r.statusForStory(story.Key)
+		expectedStatus := defaultStatusForWorkflow(action.WorkflowKey)
+		if normalizeStatus(currentStatus) == normalizeStatus(expectedStatus) {
+			fmt.Printf("  STATUS: Claude set %s correctly — no judge needed\n", expectedStatus)
+		} else {
+			// Claude didn't update — apply default transition (no judge, save tokens)
+			fmt.Printf("  GUARD: Claude left status at %q, autopilot correcting to %q\n", currentStatus, expectedStatus)
+			if err := r.ensureStatus(ctx, story.Key, expectedStatus); err != nil {
 				return "", err
 			}
-			// Judge failure is not fatal — log and continue with defaults
-			fmt.Printf("JUDGE: evaluation failed for %s, applying default transition: %v\n", action.WorkflowKey, err)
-			r.applyDefaultTransition(ctx, story.Key, action.WorkflowKey)
 		}
+
+		_ = result // raw output not needed when judge is skipped
 	}
 
 	// --- Phase 2: Review loop ---
@@ -174,7 +179,15 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 			return "", err
 		}
 
-		// Call judge to evaluate the review
+		// Check if Claude updated the status itself
+		currentStatus, _ := r.statusForStory(story.Key)
+		if !ShouldContinueReview(currentStatus) {
+			fmt.Printf("REVIEW: story %s is %s after round %d — no judge needed\n", story.Key, currentStatus, round)
+			return currentStatus, nil
+		}
+
+		// Claude didn't set "done" — call judge ONLY NOW to decide
+		fmt.Printf("JUDGE: Claude didn't resolve status, calling judge for round %d\n", round)
 		verdict, judgeErr := r.callJudge(ctx, story.Key, "code-review", result.RawOutput)
 		if judgeErr != nil {
 			if errors.Is(judgeErr, ErrAuthExpired) {
@@ -183,14 +196,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 			fmt.Printf("JUDGE: evaluation failed for review round %d: %v\n", round, judgeErr)
 		}
 
-		// Check current status (Claude may have updated it)
-		currentStatus, _ := r.statusForStory(story.Key)
-		if !ShouldContinueReview(currentStatus) {
-			fmt.Printf("REVIEW: story %s is %s after round %d\n", story.Key, currentStatus, round)
-			return currentStatus, nil
-		}
-
-		// Judge says no more work needed — ensure status is "done"
+		// Judge says no more work needed — mark done
 		if judgeErr == nil && !verdict.NeedsMoreWork {
 			fmt.Printf("JUDGE: no more work needed — marking %s as done\n", story.Key)
 			if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
@@ -201,7 +207,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 
 		if round == MaxReviewRounds {
 			fmt.Printf("REVIEW: max rounds (%d) reached for %s\n", MaxReviewRounds, story.Key)
-			// Last chance: check if judge thinks it's actually fine
+			// Last chance: judge says done?
 			if judgeErr == nil && verdict.RecommendedStatus == "done" {
 				if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
 					return "", err
