@@ -1,8 +1,10 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 
@@ -148,6 +150,59 @@ func extractStatus(node *yaml.Node) string {
 
 func normalizeStatus(status string) string {
 	return strings.ToLower(strings.TrimSpace(status))
+}
+
+// UpdateStoryStatus updates a single story's status in the sprint-status.yaml file.
+// It reads, modifies, and writes back the YAML preserving comments and structure.
+func UpdateStoryStatus(path, storyKey, newStatus string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read sprint status for update: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Match lines like "  1-2-story-name: ready-for-dev"
+		if strings.HasPrefix(trimmed, storyKey+":") {
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			lines[i] = fmt.Sprintf("%s%s: %s", indent, storyKey, newStatus)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("story key %q not found in sprint status file", storyKey)
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// GitCommitStatusUpdate stages and commits the sprint-status.yaml change
+// with an [autopilot] prefixed message.
+func GitCommitStatusUpdate(ctx context.Context, workdir, statusFile, storyKey, newStatus string) error {
+	// Stage the status file
+	stageCmd := exec.CommandContext(ctx, "git", "-C", workdir, "add", statusFile)
+	if out, err := stageCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add status file: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	// Check if there's actually something to commit
+	diffCmd := exec.CommandContext(ctx, "git", "-C", workdir, "diff", "--cached", "--quiet")
+	if err := diffCmd.Run(); err == nil {
+		// Exit code 0 means no diff — nothing to commit
+		return nil
+	}
+
+	msg := fmt.Sprintf("[autopilot] status: %s → %s", storyKey, newStatus)
+	commitCmd := exec.CommandContext(ctx, "git", "-C", workdir, "commit", "-m", msg)
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit status update: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	return nil
 }
 
 func resolveAlias(node *yaml.Node) *yaml.Node {

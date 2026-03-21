@@ -66,6 +66,8 @@ func New(cfg Config) (*Runner, error) {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
+	consecutiveBlocked := 0
+
 	for {
 		sprintStatus, err := LoadSprintStatus(r.cfg.StatusFile)
 		if err != nil {
@@ -78,45 +80,39 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
+		// Safety: stop if too many stories blocked in a row
+		if consecutiveBlocked >= MaxConsecutiveBlocked {
+			fmt.Printf("HALT: %d consecutive stories blocked — stopping autopilot\n", consecutiveBlocked)
+			return fmt.Errorf("halted after %d consecutive blocked stories", consecutiveBlocked)
+		}
+
 		storyNumber, err := StoryNumberFromKey(story.Key)
 		if err != nil {
 			return err
 		}
 
-		primaryActions, err := PlanPrimaryActions(story.Status, storyNumber)
+		fmt.Printf("\n════════════════════════════════════════\n")
+		fmt.Printf("STORY: %s (status: %s)\n", story.Key, story.Status)
+		fmt.Printf("════════════════════════════════════════\n")
+
+		outcome, err := r.processStory(ctx, story, storyNumber)
 		if err != nil {
+			if errors.Is(err, ErrAuthExpired) {
+				return err
+			}
 			return err
 		}
 
-		for _, action := range primaryActions {
-			if _, _, err := r.runStep(ctx, story.Key, action); err != nil {
-				return err
-			}
+		if outcome == "blocked" {
+			consecutiveBlocked++
+		} else {
+			consecutiveBlocked = 0
 		}
 
-		reviewAction := ReviewAction(storyNumber)
-		for round := 1; round <= MaxReviewRounds; round++ {
-			_, afterStatus, err := r.runStep(ctx, story.Key, reviewAction)
-			if err != nil {
-				if errors.Is(err, ErrAuthExpired) {
-					fmt.Printf("AUTH: token expired during review round %d — stopping\n", round)
-					return err
-				}
-				return err
-			}
-			if !ShouldContinueReview(afterStatus) {
-				fmt.Printf("REVIEW: story %s done after %d round(s)\n", story.Key, round)
-				break
-			}
-			if round == MaxReviewRounds {
-				fmt.Printf("REVIEW: max rounds (%d) reached for story %s — moving on\n", MaxReviewRounds, story.Key)
-			}
-		}
-
-		// Push any remaining unpushed commits (e.g. status YAML update)
+		// Push any remaining unpushed commits
 		pushed, err := EnsurePushed(ctx, r.cfg.Workdir)
 		if err != nil {
-			return fmt.Errorf("ensure pushed after review: %w", err)
+			return fmt.Errorf("ensure pushed after story %s: %w", story.Key, err)
 		}
 		if pushed {
 			fmt.Printf("PUSH: pushed remaining commits for story %s\n", story.Key)
@@ -124,14 +120,180 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 }
 
+// processStory handles a single story through all phases.
+// Returns the final outcome: "done" or "blocked".
+func (r *Runner) processStory(ctx context.Context, story Story, storyNumber string) (string, error) {
+	invocations := 0
+
+	// --- Phase 1: Primary actions (create-story, dev-story) ---
+	primaryActions, err := PlanPrimaryActions(story.Status, storyNumber)
+	if err != nil {
+		return "", err
+	}
+
+	for _, action := range primaryActions {
+		if invocations >= MaxInvocationsPerStory {
+			return r.blockStory(ctx, story.Key, "max invocations reached during primary actions")
+		}
+
+		result, _, err := r.runStep(ctx, story.Key, action)
+		invocations++
+		if err != nil {
+			if errors.Is(err, ErrAuthExpired) {
+				return "", err
+			}
+			return "", err
+		}
+
+		// Call judge to evaluate and ensure status transition
+		if err := r.judgeAndTransition(ctx, story.Key, action.WorkflowKey, result.RawOutput); err != nil {
+			if errors.Is(err, ErrAuthExpired) {
+				return "", err
+			}
+			// Judge failure is not fatal — log and continue with defaults
+			fmt.Printf("JUDGE: evaluation failed for %s, applying default transition: %v\n", action.WorkflowKey, err)
+			r.applyDefaultTransition(ctx, story.Key, action.WorkflowKey)
+		}
+	}
+
+	// --- Phase 2: Review loop ---
+	reviewAction := ReviewAction(storyNumber)
+	for round := 1; round <= MaxReviewRounds; round++ {
+		if invocations >= MaxInvocationsPerStory {
+			return r.blockStory(ctx, story.Key, "max invocations reached during review")
+		}
+
+		fmt.Printf("REVIEW: round %d/%d for %s\n", round, MaxReviewRounds, story.Key)
+
+		result, _, err := r.runStep(ctx, story.Key, reviewAction)
+		invocations++
+		if err != nil {
+			if errors.Is(err, ErrAuthExpired) {
+				return "", err
+			}
+			return "", err
+		}
+
+		// Call judge to evaluate the review
+		verdict, judgeErr := r.callJudge(ctx, story.Key, "code-review", result.RawOutput)
+		if judgeErr != nil {
+			if errors.Is(judgeErr, ErrAuthExpired) {
+				return "", judgeErr
+			}
+			fmt.Printf("JUDGE: evaluation failed for review round %d: %v\n", round, judgeErr)
+		}
+
+		// Check current status (Claude may have updated it)
+		currentStatus, _ := r.statusForStory(story.Key)
+		if !ShouldContinueReview(currentStatus) {
+			fmt.Printf("REVIEW: story %s is %s after round %d\n", story.Key, currentStatus, round)
+			return currentStatus, nil
+		}
+
+		// Judge says no more work needed — ensure status is "done"
+		if judgeErr == nil && !verdict.NeedsMoreWork {
+			fmt.Printf("JUDGE: no more work needed — marking %s as done\n", story.Key)
+			if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
+				return "", err
+			}
+			return "done", nil
+		}
+
+		if round == MaxReviewRounds {
+			fmt.Printf("REVIEW: max rounds (%d) reached for %s\n", MaxReviewRounds, story.Key)
+			// Last chance: check if judge thinks it's actually fine
+			if judgeErr == nil && verdict.RecommendedStatus == "done" {
+				if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
+					return "", err
+				}
+				return "done", nil
+			}
+			return r.blockStory(ctx, story.Key, fmt.Sprintf("max review rounds (%d) exhausted", MaxReviewRounds))
+		}
+	}
+
+	return "done", nil
+}
+
+// judgeAndTransition calls the judge and ensures the story transitions correctly.
+func (r *Runner) judgeAndTransition(ctx context.Context, storyKey, workflowKey, rawOutput string) error {
+	verdict, err := r.callJudge(ctx, storyKey, workflowKey, rawOutput)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("JUDGE: %s → recommended=%s, success=%v, summary=%s\n",
+		workflowKey, verdict.RecommendedStatus, verdict.Success, verdict.Summary)
+
+	// Check if Claude already updated the status
+	currentStatus, _ := r.statusForStory(storyKey)
+	expectedStatus := verdict.RecommendedStatus
+
+	if normalizeStatus(currentStatus) != normalizeStatus(expectedStatus) {
+		// Claude didn't update — autopilot does it
+		fmt.Printf("GUARD: Claude left status at %q, autopilot correcting to %q\n", currentStatus, expectedStatus)
+		if err := r.ensureStatus(ctx, storyKey, expectedStatus); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// callJudge invokes the judge Claude to evaluate a worker result.
+func (r *Runner) callJudge(ctx context.Context, storyKey, workflowKey, rawOutput string) (JudgeVerdict, error) {
+	commandCtx := ctx
+	cancel := func() {}
+	// Judge gets a shorter timeout than workers
+	if r.cfg.CommandTimeout > 0 {
+		judgeTimeout := r.cfg.CommandTimeout / 3
+		if judgeTimeout < 60*time.Second {
+			judgeTimeout = 60 * time.Second
+		}
+		commandCtx, cancel = context.WithTimeout(ctx, judgeTimeout)
+	}
+	defer cancel()
+
+	return Judge(commandCtx, r.cfg.Workdir, r.cfg.ClaudeCommand, r.cfg.ClaudeModel, storyKey, workflowKey, rawOutput)
+}
+
+// applyDefaultTransition sets the expected status when judge is unavailable.
+func (r *Runner) applyDefaultTransition(ctx context.Context, storyKey, workflowKey string) {
+	expected := defaultStatusForWorkflow(workflowKey)
+	currentStatus, _ := r.statusForStory(storyKey)
+	if normalizeStatus(currentStatus) != normalizeStatus(expected) {
+		_ = r.ensureStatus(ctx, storyKey, expected)
+	}
+}
+
+// ensureStatus updates sprint-status.yaml and commits with [autopilot] prefix.
+func (r *Runner) ensureStatus(ctx context.Context, storyKey, newStatus string) error {
+	if err := UpdateStoryStatus(r.cfg.StatusFile, storyKey, newStatus); err != nil {
+		return fmt.Errorf("update status for %s: %w", storyKey, err)
+	}
+	if err := GitCommitStatusUpdate(ctx, r.cfg.Workdir, r.cfg.StatusFile, storyKey, newStatus); err != nil {
+		return fmt.Errorf("commit status update for %s: %w", storyKey, err)
+	}
+	fmt.Printf("STATUS: %s → %s [autopilot]\n", storyKey, newStatus)
+	return nil
+}
+
+// blockStory marks a story as "blocked" and logs the reason.
+func (r *Runner) blockStory(ctx context.Context, storyKey, reason string) (string, error) {
+	fmt.Printf("BLOCKED: %s — %s\n", storyKey, reason)
+	if err := r.ensureStatus(ctx, storyKey, "blocked"); err != nil {
+		return "blocked", err
+	}
+	return "blocked", nil
+}
+
 func (r *Runner) runStep(ctx context.Context, storyKey string, action Action) (ExecResult, string, error) {
 	beforeStatus, err := r.statusForStory(storyKey)
 	if err != nil {
 		return ExecResult{}, "", err
 	}
-	fmt.Printf("STORY: %s\n", storyKey)
-	fmt.Printf("STATUS(before): %s\n", beforeStatus)
-	fmt.Printf("ACTION: %s\n", action.Command)
+	fmt.Printf("  ACTION: %s\n", action.WorkflowKey)
+	fmt.Printf("  STATUS(before): %s\n", beforeStatus)
 
 	commandCtx := ctx
 	cancel := func() {}
@@ -153,13 +315,13 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action) (E
 			resultLine = fmt.Sprintf("%s; error: %v", resultLine, execErr)
 		}
 	}
-	fmt.Printf("RESULT: %s\n", oneLine(resultLine))
+	fmt.Printf("  RESULT: %s\n", oneLine(resultLine))
 
 	afterStatus, err := r.statusForStory(storyKey)
 	if err != nil {
 		return execResult, "", err
 	}
-	fmt.Printf("STATUS(after): %s\n", afterStatus)
+	fmt.Printf("  STATUS(after): %s\n", afterStatus)
 
 	if execErr != nil {
 		return execResult, afterStatus, execErr
@@ -206,10 +368,10 @@ func oneLine(s string) string {
 func (r *Runner) printRawOutput(rawOutput string) {
 	trimmed := strings.TrimSpace(rawOutput)
 	if trimmed == "" {
-		fmt.Println("OUTPUT: <no output>")
+		fmt.Println("  OUTPUT: <no output>")
 		return
 	}
-	fmt.Println("OUTPUT:")
+	fmt.Println("  OUTPUT:")
 	fmt.Println(trimmed)
 }
 

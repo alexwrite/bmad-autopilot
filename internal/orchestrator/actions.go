@@ -6,6 +6,13 @@ import "fmt"
 // on a single story. Prevents infinite loops when reviews keep finding issues.
 const MaxReviewRounds = 3
 
+// MaxInvocationsPerStory is the absolute ceiling of Claude calls for a single story
+// across all phases (create + dev + review rounds + judge calls don't count).
+const MaxInvocationsPerStory = 8
+
+// MaxConsecutiveBlocked stops the autopilot after N stories are blocked in a row.
+const MaxConsecutiveBlocked = 2
+
 type Action struct {
 	Prompt      string
 	Command     string
@@ -16,21 +23,12 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 	switch normalizeStatus(status) {
 	case "backlog":
 		return []Action{
-			newAction(
-				"create-story",
-				fmt.Sprintf("Execute the create-story workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Auto-complete all steps autonomously as an expert Scrum Master. When done, git add all changed files and commit with message 'chore(%s): create-story completed'.", storyNumber, storyNumber),
-			),
-			newAction(
-				"dev-story",
-				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. When done, git add all changed files and commit with message 'chore(%s): dev-story completed'.", storyNumber, storyNumber),
-			),
+			createStoryAction(storyNumber),
+			devStoryAction(storyNumber),
 		}, nil
 	case "ready-for-dev", "in-progress":
 		return []Action{
-			newAction(
-				"dev-story",
-				fmt.Sprintf("Execute the dev-story workflow for story %s in #yolo mode. Read the story file, implement ALL tasks and subtasks IN ORDER. Write tests for each task. Mark tasks [x] only when tests pass. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. When done, git add all changed files and commit with message 'chore(%s): dev-story completed'.", storyNumber, storyNumber),
-			),
+			devStoryAction(storyNumber),
 		}, nil
 	case "review", "done":
 		return nil, nil
@@ -42,17 +40,73 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 func ReviewAction(storyNumber string) Action {
 	return newAction(
 		"code-review",
-		fmt.Sprintf("Execute the code-review workflow for story %s in #yolo mode. Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions. Review all changed files, fix any findings. When done, git add all changed files and commit with message 'chore(%s): code-review completed', then push.", storyNumber, storyNumber),
+		fmt.Sprintf(`Execute the code-review workflow for story %s in #yolo mode.
+Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+Review all changed files and fix any findings.
+
+COMMIT RULES:
+- If you made fixes, git add and commit with a DESCRIPTIVE conventional commit message.
+  Example: "fix(1-2): correct contrast ratio for primary-dark token"
+  Example: "refactor(1-2): extract menu card into reusable component"
+- Do NOT use generic messages like "code-review completed".
+- Describe WHAT you actually changed, not that you reviewed.
+- If no changes were needed, do NOT create an empty commit.
+
+STATUS UPDATE:
+- After review, update sprint-status.yaml for this story:
+  - If no issues found or all fixes applied: set status to "done"
+  - If you found issues but could not fix them: set status to "blocked"
+- Commit the status update separately: "chore(%s): update status to [new-status]"
+- Then push all commits.`, storyNumber, storyNumber),
 	)
 }
 
 // ShouldContinueReview returns true if the review loop should keep running.
-// Once the story status reaches "done", the loop stops unconditionally.
-// The published flag is no longer used as exit criterion because the BMAD
-// workflow commits the status YAML update after the push, leaving the repo
-// 1 commit ahead of upstream — which made the old check loop forever.
+// Stops when status reaches "done" or "blocked".
 func ShouldContinueReview(status string) bool {
-	return normalizeStatus(status) != "done"
+	s := normalizeStatus(status)
+	return s != "done" && s != "blocked"
+}
+
+func createStoryAction(storyNumber string) Action {
+	return newAction(
+		"create-story",
+		fmt.Sprintf(`Execute the create-story workflow for story %s in #yolo mode.
+Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+Auto-complete all steps autonomously as an expert Scrum Master.
+
+COMMIT RULES:
+- When done, git add all changed files and commit with a DESCRIPTIVE message.
+  Example: "chore(%s): create story spec with acceptance criteria and task breakdown"
+- Do NOT use generic messages like "create-story completed".
+- Describe what the story spec contains.
+
+STATUS UPDATE:
+- Update sprint-status.yaml: set this story's status to "ready-for-dev"
+- Commit the status update separately: "chore(%s): update status to ready-for-dev"`, storyNumber, storyNumber, storyNumber),
+	)
+}
+
+func devStoryAction(storyNumber string) Action {
+	return newAction(
+		"dev-story",
+		fmt.Sprintf(`Execute the dev-story workflow for story %s in #yolo mode.
+Read the story file, implement ALL tasks and subtasks IN ORDER.
+Write tests for each task. Mark tasks [x] only when tests pass.
+Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+
+COMMIT RULES:
+- Commit after each logical unit of work (not one giant commit at the end).
+- Use DESCRIPTIVE conventional commit messages.
+  Example: "feat(%s): implement Tailwind @theme tokens with Maillard palette"
+  Example: "feat(%s): add responsive pizza card grid component"
+- Do NOT use generic messages like "dev-story completed".
+- Describe WHAT you implemented.
+
+STATUS UPDATE:
+- When all tasks are done, update sprint-status.yaml: set this story's status to "review"
+- Commit the status update separately: "chore(%s): update status to review"`, storyNumber, storyNumber, storyNumber, storyNumber),
+	)
 }
 
 func newAction(workflowKey, prompt string) Action {

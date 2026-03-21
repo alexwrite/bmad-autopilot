@@ -25,18 +25,19 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if !strings.Contains(actions[1].Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in dev-story prompt")
 	}
-	// Verify commit instructions
-	if !strings.Contains(actions[0].Prompt, "git add") || !strings.Contains(actions[0].Prompt, "commit") {
-		t.Fatal("expected git add and commit instruction in create-story prompt")
+	// Verify commit instructions are descriptive
+	if !strings.Contains(actions[0].Prompt, "DESCRIPTIVE") {
+		t.Fatal("expected DESCRIPTIVE commit instruction in create-story prompt")
 	}
-	if !strings.Contains(actions[1].Prompt, "git add") || !strings.Contains(actions[1].Prompt, "commit") {
-		t.Fatal("expected git add and commit instruction in dev-story prompt")
+	if !strings.Contains(actions[1].Prompt, "DESCRIPTIVE") {
+		t.Fatal("expected DESCRIPTIVE commit instruction in dev-story prompt")
 	}
-	if strings.Contains(actions[0].Prompt, "push") {
-		t.Fatal("create-story prompt should not mention push")
+	// Verify status update instructions
+	if !strings.Contains(actions[0].Prompt, "sprint-status.yaml") {
+		t.Fatal("expected status update instruction in create-story prompt")
 	}
-	if strings.Contains(actions[1].Prompt, "push") {
-		t.Fatal("dev-story prompt should not mention push")
+	if !strings.Contains(actions[1].Prompt, "sprint-status.yaml") {
+		t.Fatal("expected status update instruction in dev-story prompt")
 	}
 }
 
@@ -71,11 +72,11 @@ func TestReviewActionWorkflowKey(t *testing.T) {
 	if !strings.Contains(action.Prompt, "#yolo") {
 		t.Fatal("expected yolo mode in review prompt")
 	}
-	if !strings.Contains(action.Prompt, "git add") || !strings.Contains(action.Prompt, "commit") {
-		t.Fatal("expected git add and commit instruction in code-review prompt")
+	if !strings.Contains(action.Prompt, "DESCRIPTIVE") {
+		t.Fatal("expected DESCRIPTIVE commit instruction in code-review prompt")
 	}
-	if !strings.Contains(action.Prompt, "push") {
-		t.Fatal("expected push instruction in code-review prompt")
+	if !strings.Contains(action.Prompt, "sprint-status.yaml") {
+		t.Fatal("expected status update instruction in code-review prompt")
 	}
 }
 
@@ -91,6 +92,8 @@ func TestShouldContinueReview(t *testing.T) {
 		{"done stops", "done", false},
 		{"Done case-insensitive stops", "Done", false},
 		{"DONE uppercase stops", "DONE", false},
+		{"blocked stops", "blocked", false},
+		{"Blocked case-insensitive stops", "Blocked", false},
 	}
 	for _, tt := range tests {
 		got := ShouldContinueReview(tt.status)
@@ -103,5 +106,17 @@ func TestShouldContinueReview(t *testing.T) {
 func TestMaxReviewRoundsIsPositive(t *testing.T) {
 	if MaxReviewRounds < 1 {
 		t.Fatalf("MaxReviewRounds must be >= 1, got %d", MaxReviewRounds)
+	}
+}
+
+func TestMaxInvocationsPerStoryIsPositive(t *testing.T) {
+	if MaxInvocationsPerStory < MaxReviewRounds+2 {
+		t.Fatalf("MaxInvocationsPerStory (%d) must be > MaxReviewRounds+2 (%d)", MaxInvocationsPerStory, MaxReviewRounds+2)
+	}
+}
+
+func TestMaxConsecutiveBlockedIsPositive(t *testing.T) {
+	if MaxConsecutiveBlocked < 1 {
+		t.Fatalf("MaxConsecutiveBlocked must be >= 1, got %d", MaxConsecutiveBlocked)
 	}
 }
