@@ -104,6 +104,102 @@ func TestNextPendingStory(t *testing.T) {
 	}
 }
 
+func TestNextPendingStoryInEpics(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "sprint-status.yaml")
+	content := `
+1-1-story-a: done
+1-2-story-b: done
+8-7-story-c: review
+8-8-story-d: backlog
+15-1-story-e: backlog
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	got, err := LoadSprintStatus(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// Filter on epic 8 only
+	next, ok := got.NextPendingStoryInEpics([]int{8})
+	if !ok {
+		t.Fatal("expected a story from epic 8")
+	}
+	if next.Key != "8-7-story-c" {
+		t.Fatalf("expected 8-7-story-c, got %s", next.Key)
+	}
+
+	// Filter on epic 15
+	next, ok = got.NextPendingStoryInEpics([]int{15})
+	if !ok {
+		t.Fatal("expected a story from epic 15")
+	}
+	if next.Key != "15-1-story-e" {
+		t.Fatalf("expected 15-1-story-e, got %s", next.Key)
+	}
+
+	// Filter on epic 1 (all done) → no result
+	_, ok = got.NextPendingStoryInEpics([]int{1})
+	if ok {
+		t.Fatal("expected no pending story in epic 1")
+	}
+
+	// No filter → first non-done
+	next, ok = got.NextPendingStoryInEpics(nil)
+	if !ok || next.Key != "8-7-story-c" {
+		t.Fatalf("expected 8-7-story-c with nil filter, got %v %s", ok, next.Key)
+	}
+}
+
+func TestParseEpicFilter(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []int
+		err   bool
+	}{
+		{"", nil, false},
+		{"8", []int{8}, false},
+		{"15-21", []int{15, 16, 17, 18, 19, 20, 21}, false},
+		{"8,15-17", []int{8, 15, 16, 17}, false},
+		{"3, 8, 15-16", []int{3, 8, 15, 16}, false},
+		{"abc", nil, true},
+		{"5-3", nil, true},
+	}
+	for _, tt := range tests {
+		got, err := ParseEpicFilter(tt.input)
+		if (err != nil) != tt.err {
+			t.Errorf("ParseEpicFilter(%q): err=%v, wantErr=%v", tt.input, err, tt.err)
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		if len(got) != len(tt.want) {
+			t.Errorf("ParseEpicFilter(%q) = %v, want %v", tt.input, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("ParseEpicFilter(%q)[%d] = %d, want %d", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestEpicNumberFromKey(t *testing.T) {
+	n, err := EpicNumberFromKey("8-7-suivi-score")
+	if err != nil || n != 8 {
+		t.Fatalf("expected 8, got %d (err=%v)", n, err)
+	}
+	n, err = EpicNumberFromKey("15-1-layout-espace")
+	if err != nil || n != 15 {
+		t.Fatalf("expected 15, got %d (err=%v)", n, err)
+	}
+}
+
 func TestStoryNumberFromKey(t *testing.T) {
 	number, err := StoryNumberFromKey("12-3-sample-story")
 	if err != nil {

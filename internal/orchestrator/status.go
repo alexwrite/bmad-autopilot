@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -68,12 +69,93 @@ func LoadSprintStatus(path string) (SprintStatus, error) {
 }
 
 func (s SprintStatus) NextPendingStory() (Story, bool) {
+	return s.NextPendingStoryInEpics(nil)
+}
+
+// NextPendingStoryInEpics returns the first non-done story belonging to the
+// given epic numbers. If epicFilter is nil or empty, all stories are considered.
+func (s SprintStatus) NextPendingStoryInEpics(epicFilter []int) (Story, bool) {
+	filterSet := makeEpicFilterSet(epicFilter)
 	for _, story := range s.Stories {
-		if normalizeStatus(story.Status) != "done" {
-			return story, true
+		if normalizeStatus(story.Status) == "done" {
+			continue
 		}
+		if len(filterSet) > 0 {
+			epicNum, err := EpicNumberFromKey(story.Key)
+			if err != nil {
+				continue
+			}
+			if !filterSet[epicNum] {
+				continue
+			}
+		}
+		return story, true
 	}
 	return Story{}, false
+}
+
+// EpicNumberFromKey extracts the epic number from a story key like "8-7-suivi-..." → 8.
+func EpicNumberFromKey(storyKey string) (int, error) {
+	idx := strings.Index(storyKey, "-")
+	if idx <= 0 {
+		return 0, fmt.Errorf("no epic number in key %q", storyKey)
+	}
+	n, err := strconv.Atoi(storyKey[:idx])
+	if err != nil {
+		return 0, fmt.Errorf("parse epic number from %q: %w", storyKey, err)
+	}
+	return n, nil
+}
+
+// ParseEpicFilter parses a string like "8", "15-21", "8,15-21,3" into a slice of epic numbers.
+func ParseEpicFilter(spec string) ([]int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+
+	var result []int
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "-") {
+			bounds := strings.SplitN(part, "-", 2)
+			lo, err := strconv.Atoi(strings.TrimSpace(bounds[0]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid epic range %q: %w", part, err)
+			}
+			hi, err := strconv.Atoi(strings.TrimSpace(bounds[1]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid epic range %q: %w", part, err)
+			}
+			if lo > hi {
+				return nil, fmt.Errorf("invalid epic range %q: start > end", part)
+			}
+			for i := lo; i <= hi; i++ {
+				result = append(result, i)
+			}
+		} else {
+			n, err := strconv.Atoi(part)
+			if err != nil {
+				return nil, fmt.Errorf("invalid epic number %q: %w", part, err)
+			}
+			result = append(result, n)
+		}
+	}
+	return result, nil
+}
+
+func makeEpicFilterSet(epics []int) map[int]bool {
+	if len(epics) == 0 {
+		return nil
+	}
+	set := make(map[int]bool, len(epics))
+	for _, e := range epics {
+		set[e] = true
+	}
+	return set
 }
 
 func (s SprintStatus) StoryStatus(key string) (string, bool) {

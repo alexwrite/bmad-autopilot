@@ -21,6 +21,7 @@ type Config struct {
 	ClaudeCommand        string
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
+	EpicFilter           []int
 }
 
 type Runner struct {
@@ -76,15 +77,23 @@ func (r *Runner) Run(ctx context.Context) error {
 	defer r.log.Close()
 	consecutiveBlocked := 0
 
+	if len(r.cfg.EpicFilter) > 0 {
+		r.log.Log("FILTER", "targeting epics: %v", r.cfg.EpicFilter)
+	}
+
 	for {
 		sprintStatus, err := LoadSprintStatus(r.cfg.StatusFile)
 		if err != nil {
 			return err
 		}
 
-		story, ok := sprintStatus.NextPendingStory()
+		story, ok := sprintStatus.NextPendingStoryInEpics(r.cfg.EpicFilter)
 		if !ok {
-			r.log.Log("DONE", "all non-retrospective stories are done")
+			if len(r.cfg.EpicFilter) > 0 {
+				r.log.Log("DONE", "all stories in selected epics are done")
+			} else {
+				r.log.Log("DONE", "all non-retrospective stories are done")
+			}
 			return nil
 		}
 
