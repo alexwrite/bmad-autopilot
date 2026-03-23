@@ -35,7 +35,7 @@ var projectContextPaths = []string{
 
 // Judge calls a lightweight Claude instance to evaluate the result of a worker action.
 // It inspects git diff, story files, and raw output to produce a structured verdict.
-func Judge(ctx context.Context, workdir, claudeCmd, claudeModel, storyKey, workflowKey, rawOutput string) (JudgeVerdict, error) {
+func Judge(ctx context.Context, workdir, claudeCmd, claudeModel, effortOverride, storyKey, workflowKey, rawOutput string) (JudgeVerdict, error) {
 	if strings.TrimSpace(claudeCmd) == "" {
 		claudeCmd = "claude"
 	}
@@ -51,6 +51,15 @@ func Judge(ctx context.Context, workdir, claudeCmd, claudeModel, storyKey, workf
 	}
 	if claudeModel != "" {
 		args = append(args, "--model", claudeModel)
+	}
+
+	// Resolve effort: CLI override > judge default
+	effort := strings.TrimSpace(effortOverride)
+	if effort == "" {
+		effort = JudgeEffort
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 
 	cmd := exec.CommandContext(ctx, claudeCmd, args...)

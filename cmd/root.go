@@ -14,6 +14,7 @@ type rootOptions struct {
 	workdir           string
 	claudeModel       string
 	claudeCommand     string
+	claudeEffort      string
 	timeout           time.Duration
 	showCommandOutput bool
 	epics             string
@@ -49,6 +50,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.claudeCommand, "claude-command", opts.claudeCommand, "Path to the claude CLI binary (default: claude)")
 	cmd.PersistentFlags().DurationVar(&opts.timeout, "timeout", opts.timeout, "Per-command timeout (0 disables timeout)")
 	cmd.PersistentFlags().BoolVar(&opts.showCommandOutput, "show-command-output", opts.showCommandOutput, "Print raw Claude output for each command (default: true)")
+	cmd.PersistentFlags().StringVar(&opts.claudeEffort, "effort", "", `Global effort level override for Claude (low, medium, high, max). Per-workflow defaults: create-story=max, dev-story=max, code-review=high, judge=low`)
 	cmd.PersistentFlags().StringVar(&opts.epics, "epics", "", `Epic filter: only process stories from these epics (e.g. "8", "15-21", "8,15-21")`)
 
 	cmd.AddCommand(newRunCmd(opts))

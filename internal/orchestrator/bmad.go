@@ -12,6 +12,7 @@ type workflowSpec struct {
 	agent        string // filename in _bmad/bmm/agents/ (e.g. "sm.md")
 	workflowDir  string // dir relative to _bmad/bmm/workflows/ (e.g. "4-implementation/create-story")
 	instructFile string // instruction filename inside workflowDir
+	effort       string // default Claude --effort level (low, medium, high, max)
 }
 
 // Workflow registry: which agent + workflow files each action needs.
@@ -23,18 +24,34 @@ var workflowRegistry = map[string]workflowSpec{
 		agent:        "sm.md",
 		workflowDir:  "4-implementation/create-story",
 		instructFile: "instructions.xml",
+		effort:       "max",
 	},
 	"dev-story": {
 		agent:        "dev.md",
 		workflowDir:  "4-implementation/dev-story",
 		instructFile: "instructions.xml",
+		effort:       "max",
 	},
 	"code-review": {
 		agent:        "dev.md",
 		workflowDir:  "4-implementation/code-review",
 		instructFile: "instructions.xml",
+		effort:       "high",
 	},
 }
+
+// DefaultEffort returns the default effort level for a workflow key.
+// Returns empty string for unknown workflows.
+func DefaultEffort(workflowKey string) string {
+	if spec, ok := workflowRegistry[workflowKey]; ok {
+		return spec.effort
+	}
+	return ""
+}
+
+// JudgeEffort is the default effort level for judge evaluations.
+// Judges perform structured evaluation, not complex reasoning.
+const JudgeEffort = "low"
 
 // BMADContext holds all BMAD file contents needed to execute a workflow.
 type BMADContext struct {

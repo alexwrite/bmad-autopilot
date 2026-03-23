@@ -21,6 +21,7 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 				Workdir:              opts.workdir,
 				ClaudeModel:          opts.claudeModel,
 				ClaudeCommand:        opts.claudeCommand,
+				ClaudeEffort:         opts.claudeEffort,
 				CommandTimeout:       opts.timeout,
 				DisableCommandOutput: !opts.showCommandOutput,
 				EpicFilter:           epicFilter,

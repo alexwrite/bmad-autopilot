@@ -60,13 +60,14 @@ type claudeJSONResponse struct {
 
 // ClaudeExecutor spawns `claude -p` as a subprocess with BMAD context injection.
 type ClaudeExecutor struct {
-	workdir      string
-	claudeModel  string
-	claudeCmd    string
-	allowedTools string
+	workdir       string
+	claudeModel   string
+	claudeCmd     string
+	claudeEffort  string // global override; empty = use per-workflow defaults
+	allowedTools  string
 }
 
-func NewClaudeExecutor(workdir, claudeModel, claudeCmd string) *ClaudeExecutor {
+func NewClaudeExecutor(workdir, claudeModel, claudeCmd, claudeEffort string) *ClaudeExecutor {
 	if strings.TrimSpace(claudeCmd) == "" {
 		claudeCmd = "claude"
 	}
@@ -74,6 +75,7 @@ func NewClaudeExecutor(workdir, claudeModel, claudeCmd string) *ClaudeExecutor {
 		workdir:      workdir,
 		claudeModel:  strings.TrimSpace(claudeModel),
 		claudeCmd:    claudeCmd,
+		claudeEffort: strings.TrimSpace(claudeEffort),
 		allowedTools: "Bash,Read,Write,Edit,Glob,Grep,Agent,Skill",
 	}
 }
@@ -92,6 +94,15 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	}
 	if e.allowedTools != "" {
 		args = append(args, "--allowedTools", e.allowedTools)
+	}
+
+	// Resolve effort level: CLI override > per-workflow default
+	effort := e.claudeEffort
+	if effort == "" {
+		effort = DefaultEffort(action.WorkflowKey)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 
 	// Load and inject BMAD context if workflow key is set

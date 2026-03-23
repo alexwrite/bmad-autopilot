@@ -19,6 +19,7 @@ type Config struct {
 	Workdir              string
 	ClaudeModel          string
 	ClaudeCommand        string
+	ClaudeEffort         string
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
 	EpicFilter           []int
@@ -68,7 +69,7 @@ func New(cfg Config) (*Runner, error) {
 	return &Runner{
 		cfg:      cfg,
 		brain:    selectedBrain,
-		executor: NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand),
+		executor: NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand, cfg.ClaudeEffort),
 		log:      logger,
 	}, nil
 }
@@ -275,7 +276,7 @@ func (r *Runner) callJudge(ctx context.Context, storyKey, workflowKey, rawOutput
 	}
 	defer cancel()
 
-	return Judge(commandCtx, r.cfg.Workdir, r.cfg.ClaudeCommand, r.cfg.ClaudeModel, storyKey, workflowKey, rawOutput)
+	return Judge(commandCtx, r.cfg.Workdir, r.cfg.ClaudeCommand, r.cfg.ClaudeModel, r.cfg.ClaudeEffort, storyKey, workflowKey, rawOutput)
 }
 
 // ensureStatus updates sprint-status.yaml and commits with [autopilot] prefix.
