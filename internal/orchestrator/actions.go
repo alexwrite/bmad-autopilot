@@ -42,23 +42,63 @@ func ReviewAction(storyNumber string) Action {
 		"code-review",
 		fmt.Sprintf(`Execute the code-review workflow for story %s in #yolo mode.
 Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
-Review all changed files and fix any findings.
+
+PERSONA: You are a grey-hat security researcher AND a senior dev reviewer.
+You think like an attacker but fix like a defender. You hunt BOTH security vulns AND classic bugs.
+
+PHASE 1 — RECON (map the attack surface):
+- Read the story file and ALL changed files.
+- Identify every entry point: routes, form handlers, API endpoints, file uploads, WebSocket channels.
+- Identify trust boundaries: user input → controller → service → database → response.
+- List all data flows where untrusted data crosses a trust boundary.
+
+PHASE 2 — OFFENSIVE (try to break it, OWASP Top 10 methodology):
+For each entry point, systematically attempt:
+- **Injection** (SQL/DQL, XSS stored+reflected, SSTI, command injection, LDAP, header injection)
+- **Broken Auth** (session fixation, credential stuffing vectors, missing brute-force protection)
+- **Broken Access Control** (IDOR — change entity IDs in URLs, privilege escalation between roles, missing Voter checks, forced browsing to admin routes)
+- **Security Misconfiguration** (verbose errors leaking stack traces, debug mode, default credentials, missing security headers, CORS misconfiguration)
+- **Cryptographic Failures** (plaintext PII, weak hashing, hardcoded secrets, missing encryption at rest)
+- **Insecure Design** (race conditions via concurrent requests, mass assignment via unprotected form fields, business logic bypass — negative amounts, duplicate submissions, replay attacks)
+- **SSRF** (user-controlled URLs fetched server-side without validation)
+- **Data Exposure** (API over-fetching — returning fields the role should not see, PII in logs, error responses with internal paths)
+
+For EACH finding, write a PROOF OF CONCEPT:
+- The exact malicious input, HTTP request, or scenario.
+- The expected vulnerable behavior vs the expected secure behavior.
+- NOT "this could be vulnerable" — PROVE IT or dismiss it.
+
+PHASE 3 — DEFENSIVE (fix and harden):
+- Fix every CRITICAL and HIGH finding. Write a security test that proves the fix.
+- For MEDIUM findings: fix if straightforward, otherwise document with the exact exploit scenario.
+- IGNORE cosmetic issues (naming, formatting, style) unless they cause an actual bug.
+
+PHASE 4 — VALIDATION (verify story claims):
+- Verify tasks marked [x] are actually implemented (file:line evidence).
+- Verify each Acceptance Criterion has a working implementation AND a test.
+- Missing AC implementation = HIGH finding. False [x] = CRITICAL finding.
+
+TEST EXECUTION RULES:
+- Only run tests for files changed in this story, NOT the full test suite.
+- Use targeted test commands (single file or --filter).
+- Write NEW security test cases for vulnerabilities you find and fix.
+- Run the full suite ONCE at the end as a final regression check.
 
 COMMIT RULES:
 - ALL commit messages MUST start with "review(%s): " followed by a description.
-- If you made fixes, git add and commit with a DESCRIPTIVE message.
-  Example: "review(%s): fix contrast ratio for primary-dark token"
-  Example: "review(%s): extract menu card into reusable component"
+- Describe the VULNERABILITY you fixed, not that you reviewed.
+  Example: "review(%s): sanitize review content against stored XSS via Twig escape"
+  Example: "review(%s): add HostVoter check to prevent IDOR on message endpoint"
+  Example: "review(%s): add rate limiting on password reset to prevent brute-force"
 - Do NOT use generic messages like "code-review completed".
-- Describe WHAT you actually changed, not that you reviewed.
-- If no changes were needed, do NOT create an empty commit.
+- If no real issues found, do NOT create an empty commit.
 
 STATUS UPDATE:
 - After review, update sprint-status.yaml for this story:
-  - If no issues found or all fixes applied: set status to "done"
-  - If you found issues but could not fix them: set status to "blocked"
+  - If no CRITICAL/HIGH issues remain: set status to "done"
+  - If CRITICAL/HIGH issues could not be fixed: set status to "blocked"
 - Commit the status update separately: "review(%s): update status to [new-status]"
-- Then push all commits.`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
+- Then push all commits.`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
 	)
 }
 
