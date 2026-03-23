@@ -76,9 +76,17 @@ func createStoryAction(storyNumber string) Action {
 Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
 Auto-complete all steps autonomously as an expert Scrum Master.
 
+TEST-FIRST MANDATE:
+- Design the story with TESTABILITY as the primary constraint.
+- The "Test Strategy" section MUST be written BEFORE the "Tasks / Subtasks" section.
+- Each acceptance criterion must have a corresponding test scenario (unit or functional).
+- Tasks must be ordered: test infrastructure first, then implementation, then integration tests.
+- If a task cannot be tested in isolation, split it until it can.
+- Specify exactly WHAT to test and HOW (test class, method pattern, assertions).
+
 COMMIT RULES:
 - ALL commit messages MUST start with "create(%s): " followed by a description.
-  Example: "create(%s): define story spec with 6 acceptance criteria and task breakdown"
+  Example: "create(%s): define story spec with 6 acceptance criteria and test-first task breakdown"
 - Do NOT use generic messages like "create-story completed".
 - Describe what the story spec contains.
 
@@ -95,6 +103,13 @@ func devStoryAction(storyNumber string) Action {
 Read the story file, implement ALL tasks and subtasks IN ORDER.
 Write tests for each task. Mark tasks [x] only when tests pass.
 Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+
+TEST EXECUTION RULES:
+- ONLY run YOUR tests — the tests you wrote or modified for this story.
+- Use targeted test commands (single file or single method), NEVER the full test suite.
+- Assume the existing test suite is green before you started. Your job is to keep it green.
+- Run the full suite ONCE at the very end, just before setting status to "review", as a final sanity check.
+- If a pre-existing test breaks, fix the regression — but do NOT re-run the full suite after every small change.
 
 COMMIT RULES:
 - ALL commit messages MUST start with "dev(%s): " followed by a description.
