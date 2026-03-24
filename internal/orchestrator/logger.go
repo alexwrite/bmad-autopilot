@@ -39,6 +39,7 @@ func NewRunLogger(workdir string) (*RunLogger, error) {
 // Close flushes and closes the log file.
 func (l *RunLogger) Close() {
 	if l.logFile != nil {
+		l.logFile.Sync()
 		l.logFile.Close()
 	}
 }
@@ -54,6 +55,7 @@ func (l *RunLogger) Log(tag, format string, args ...interface{}) {
 	if l.logFile != nil {
 		fullTs := time.Now().Format("2006-01-02T15:04:05")
 		fmt.Fprintf(l.logFile, "[%s] %s: %s\n", fullTs, tag, msg)
+		l.logFile.Sync()
 	}
 }
 
@@ -68,6 +70,7 @@ func (l *RunLogger) LogRaw(format string, args ...interface{}) {
 	if l.logFile != nil {
 		fullTs := time.Now().Format("2006-01-02T15:04:05")
 		fmt.Fprintf(l.logFile, "[%s] %s\n", fullTs, msg)
+		l.logFile.Sync()
 	}
 }
 
@@ -77,6 +80,7 @@ func (l *RunLogger) LogSeparator() {
 	fmt.Println(sep)
 	if l.logFile != nil {
 		fmt.Fprintln(l.logFile, sep)
+		l.logFile.Sync()
 	}
 }
 
