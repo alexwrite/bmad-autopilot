@@ -79,10 +79,11 @@ PHASE 4 — VALIDATION (verify story claims):
 - Missing AC implementation = HIGH finding. False [x] = CRITICAL finding.
 
 TEST EXECUTION RULES:
-- Only run tests for files changed in this story, NOT the full test suite.
-- Use targeted test commands (single file or --filter).
+- ONLY run tests for files changed in this story — NEVER the full test suite.
+- Use targeted test commands with EXPLICIT file paths or --filter.
 - Write NEW security test cases for vulnerabilities you find and fix.
-- Run the full suite ONCE at the end as a final regression check.
+- Running "php bin/phpunit" without file arguments is FORBIDDEN (2900+ tests, 20+ min, $5-12 wasted).
+- Pre-existing test failures are NOT your problem — ignore them.
 
 COMMIT RULES:
 - ALL commit messages MUST start with "review(%s): " followed by a description.
@@ -146,10 +147,11 @@ Follow the workflow engine (workflow.xml) to process the workflow configuration 
 
 TEST EXECUTION RULES:
 - ONLY run YOUR tests — the tests you wrote or modified for this story.
-- Use targeted test commands (single file or single method), NEVER the full test suite.
-- Assume the existing test suite is green before you started. Your job is to keep it green.
-- Run the full suite ONCE at the very end, just before setting status to "review", as a final sanity check.
-- If a pre-existing test breaks, fix the regression — but do NOT re-run the full suite after every small change.
+- Use targeted test commands with EXPLICIT file paths or --filter, NEVER the full test suite.
+- Running "php bin/phpunit" without file arguments is ABSOLUTELY FORBIDDEN (2900+ tests, 20+ min, $5-12 wasted).
+- Do NOT use "composer test" either (Composer 300s process timeout + runs full suite).
+- Before running tests, perform IMPACT ANALYSIS: list modified files → identify their test files + dependent tests → run ONLY those.
+- Pre-existing test failures are NOT your problem — ignore them.
 
 COMMIT RULES:
 - ALL commit messages MUST start with "dev(%s): " followed by a description.
