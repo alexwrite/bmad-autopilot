@@ -38,6 +38,12 @@ var workflowRegistry = map[string]workflowSpec{
 		instructFile: "instructions.xml",
 		effort:       "high",
 	},
+	"validate-story": {
+		agent:        "qa.md",
+		workflowDir:  "4-implementation/validate-story",
+		instructFile: "instructions.xml",
+		effort:       "max",
+	},
 }
 
 // DefaultEffort returns the default effort level for a workflow key.
@@ -129,7 +135,12 @@ func (ctx *BMADContext) SystemPrompt() string {
 	sb.WriteString("\n- NEVER use 'composer test' (Composer 300s timeout + runs full suite).")
 	sb.WriteString("\n- ALWAYS specify test file paths: 'php bin/phpunit tests/Unit/A.php tests/Functional/B.php'")
 	sb.WriteString("\n- Before testing: list modified files → identify their tests + dependent tests → run ONLY those.")
-	sb.WriteString("\n- Pre-existing test failures are NOT your problem. Do NOT investigate or mention them.\n")
+	sb.WriteString("\n- Pre-existing test failures are NOT your problem. Do NOT investigate or mention them.")
+	sb.WriteString("\n\nBROWSER TESTING POLICY (for validate-story workflows):")
+	sb.WriteString("\n- When browser testing is required, use MCP Chrome DevTools tools (mcp__chrome-devtools__*).")
+	sb.WriteString("\n- You ARE the browser tester. Navigate pages, click elements, fill forms, take screenshots.")
+	sb.WriteString("\n- Test responsive (resize to mobile/tablet/desktop), dark mode (toggle data-theme), i18n (switch locale).")
+	sb.WriteString("\n- Record PASS/FAIL for each Acceptance Criterion based on your browser observations.\n")
 
 	writeSection("BMAD MODULE CONFIG", ctx.Config)
 	writeSection("BMAD AGENT PERSONA", ctx.Agent)

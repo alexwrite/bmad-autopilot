@@ -23,6 +23,7 @@ type Config struct {
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
 	EpicFilter           []int
+	StoryFilter          []string // specific story numbers to process (e.g. ["2-1", "2-3"])
 }
 
 type Runner struct {
@@ -76,6 +77,67 @@ func New(cfg Config) (*Runner, error) {
 
 func (r *Runner) Run(ctx context.Context) error {
 	defer r.log.Close()
+
+	// --story mode: process only the specified stories, then stop
+	if len(r.cfg.StoryFilter) > 0 {
+		return r.runStoryFilter(ctx)
+	}
+
+	return r.runLoop(ctx)
+}
+
+// runStoryFilter processes only the explicitly requested stories (--story flag).
+func (r *Runner) runStoryFilter(ctx context.Context) error {
+	r.log.Log("FILTER", "targeting stories: %v", r.cfg.StoryFilter)
+
+	sprintStatus, err := LoadSprintStatus(r.cfg.StatusFile)
+	if err != nil {
+		return err
+	}
+
+	stories := sprintStatus.FindStoriesByNumbers(r.cfg.StoryFilter)
+	if len(stories) == 0 {
+		return fmt.Errorf("no stories found matching %v", r.cfg.StoryFilter)
+	}
+
+	for _, story := range stories {
+		storyNumber, err := StoryNumberFromKey(story.Key)
+		if err != nil {
+			return err
+		}
+
+		r.log.LogSeparator()
+		r.log.Log("STORY", "%s (status: %s)", story.Key, story.Status)
+		r.log.LogSeparator()
+
+		if err := r.log.SetStory(story.Key); err != nil {
+			return fmt.Errorf("init story log dir: %w", err)
+		}
+
+		_, err = r.processStory(ctx, story, storyNumber)
+		if err != nil {
+			if errors.Is(err, ErrAuthExpired) {
+				r.log.Log("AUTH", "token expired — stopping")
+				return err
+			}
+			return err
+		}
+
+		pushed, err := EnsurePushed(ctx, r.cfg.Workdir)
+		if err != nil {
+			return fmt.Errorf("ensure pushed after story %s: %w", story.Key, err)
+		}
+		if pushed {
+			r.log.Log("PUSH", "pushed remaining commits for story %s", story.Key)
+		}
+	}
+
+	r.log.Log("DONE", "all requested stories processed")
+	return nil
+}
+
+// runLoop is the original behavior: process stories sequentially until all are done.
+func (r *Runner) runLoop(ctx context.Context) error {
 	consecutiveBlocked := 0
 
 	if len(r.cfg.EpicFilter) > 0 {

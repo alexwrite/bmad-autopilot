@@ -82,7 +82,7 @@ func TestNextPendingStory(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "sprint-status.yaml")
 	content := `
-1-1-story-a: done
+1-1-story-a: validated
 1-2-story-b: in-progress
 2-1-story-c: backlog
 `
@@ -108,8 +108,8 @@ func TestNextPendingStoryInEpics(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "sprint-status.yaml")
 	content := `
-1-1-story-a: done
-1-2-story-b: done
+1-1-story-a: validated
+1-2-story-b: validated
 8-7-story-c: review
 8-8-story-d: backlog
 15-1-story-e: backlog

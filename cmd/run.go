@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/alexwrite/bmad-autopilot/internal/orchestrator"
 
 	"github.com/spf13/cobra"
@@ -25,6 +27,7 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 				CommandTimeout:       opts.timeout,
 				DisableCommandOutput: !opts.showCommandOutput,
 				EpicFilter:           epicFilter,
+				StoryFilter:          parseStoryFilter(opts.stories),
 			})
 			if err != nil {
 				return err
@@ -32,4 +35,20 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 			return runner.Run(cmd.Context())
 		},
 	}
+}
+
+// parseStoryFilter splits a comma-separated story list like "2-1,2-3" into individual numbers.
+func parseStoryFilter(spec string) []string {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	var result []string
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }

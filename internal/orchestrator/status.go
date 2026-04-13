@@ -72,12 +72,33 @@ func (s SprintStatus) NextPendingStory() (Story, bool) {
 	return s.NextPendingStoryInEpics(nil)
 }
 
+// FindStoriesByNumbers returns all stories whose story number (e.g. "2-1")
+// matches one of the given numbers. Stories are returned in sprint order.
+func (s SprintStatus) FindStoriesByNumbers(numbers []string) []Story {
+	numberSet := make(map[string]bool, len(numbers))
+	for _, n := range numbers {
+		numberSet[strings.TrimSpace(n)] = true
+	}
+
+	var result []Story
+	for _, story := range s.Stories {
+		num, err := StoryNumberFromKey(story.Key)
+		if err != nil {
+			continue
+		}
+		if numberSet[num] {
+			result = append(result, story)
+		}
+	}
+	return result
+}
+
 // NextPendingStoryInEpics returns the first non-done story belonging to the
 // given epic numbers. If epicFilter is nil or empty, all stories are considered.
 func (s SprintStatus) NextPendingStoryInEpics(epicFilter []int) (Story, bool) {
 	filterSet := makeEpicFilterSet(epicFilter)
 	for _, story := range s.Stories {
-		if normalizeStatus(story.Status) == "done" {
+		if normalizeStatus(story.Status) == "validated" {
 			continue
 		}
 		if len(filterSet) > 0 {

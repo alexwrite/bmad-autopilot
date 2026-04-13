@@ -14,9 +14,10 @@ const MaxInvocationsPerStory = 8
 const MaxConsecutiveBlocked = 2
 
 type Action struct {
-	Prompt      string
-	Command     string
-	WorkflowKey string // maps to BMAD workflow in workflowRegistry
+	Prompt       string
+	Command      string
+	WorkflowKey  string // maps to BMAD workflow in workflowRegistry
+	AllowedTools string // override default allowed tools (empty = use executor default)
 }
 
 func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
@@ -30,7 +31,13 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 		return []Action{
 			devStoryAction(storyNumber),
 		}, nil
-	case "review", "done":
+	case "review":
+		return nil, nil
+	case "done":
+		return []Action{
+			validateStoryAction(storyNumber),
+		}, nil
+	case "validated":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported story status %q", status)
@@ -107,7 +114,7 @@ STATUS UPDATE:
 // Stops when status reaches "done" or "blocked".
 func ShouldContinueReview(status string) bool {
 	s := normalizeStatus(status)
-	return s != "done" && s != "blocked"
+	return s != "done" && s != "blocked" && s != "validated"
 }
 
 func createStoryAction(storyNumber string) Action {
@@ -165,6 +172,69 @@ STATUS UPDATE:
 - When all tasks are done, update sprint-status.yaml: set this story's status to "review"
 - Commit the status update separately: "dev(%s): update status to review"`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
 	)
+}
+
+// chromeMCPTools lists the MCP Chrome DevTools tools for browser-based validation.
+const chromeMCPTools = "mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__click,mcp__chrome-devtools__fill,mcp__chrome-devtools__fill_form,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__hover,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__select_page,mcp__chrome-devtools__list_pages,mcp__chrome-devtools__new_page,mcp__chrome-devtools__close_page,mcp__chrome-devtools__get_console_message,mcp__chrome-devtools__list_console_messages,mcp__chrome-devtools__list_network_requests,mcp__chrome-devtools__get_network_request,mcp__chrome-devtools__handle_dialog,mcp__chrome-devtools__upload_file,mcp__chrome-devtools__drag,mcp__chrome-devtools__emulate,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__lighthouse_audit"
+
+func validateStoryAction(storyNumber string) Action {
+	return Action{
+		Prompt: fmt.Sprintf(`Execute the validate-story workflow for story %s in #yolo mode.
+Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+
+CRITICAL CONTEXT — FULLY AUTONOMOUS VALIDATION (NO HUMAN):
+You are running in AUTOPILOT mode. There is NO human to test in the browser.
+YOU are both the security auditor AND the browser tester.
+Use the MCP Chrome DevTools tools for ALL browser-based testing.
+
+BROWSER TESTING VIA MCP CHROME DEVTOOLS:
+- Navigate to pages: use mcp__chrome-devtools__navigate_page
+- Take screenshots to verify visual state: use mcp__chrome-devtools__take_screenshot
+- Click buttons/links: use mcp__chrome-devtools__click
+- Fill forms: use mcp__chrome-devtools__fill or mcp__chrome-devtools__fill_form
+- Check console errors: use mcp__chrome-devtools__list_console_messages
+- Verify network requests: use mcp__chrome-devtools__list_network_requests
+- Test responsive: use mcp__chrome-devtools__resize_page (mobile: 375x667, tablet: 768x1024, desktop: 1920x1080)
+- Test dark mode: use mcp__chrome-devtools__evaluate_script to toggle data-theme attribute
+- Test i18n: navigate with /en/ and /fr/ locale prefixes
+- Wait for elements: use mcp__chrome-devtools__wait_for before interacting
+- Keyboard interactions: use mcp__chrome-devtools__press_key
+
+PHASE EXECUTION:
+1. PHASE 1 (Autonomous Deep Scan): Execute ALL automated checks — code analysis, curl attacks, PHPStan, PHPUnit, DB queries, pentest. Standard workflow.
+2. PHASE 2 (Report): Compile findings report. Do NOT wait for human — proceed immediately to Phase 3.
+3. PHASE 3 (Fix + Browser Test):
+   - First: fix ALL findings from Phase 1 (CRITIQUE, MAJEUR, MINEUR — zero unresolved).
+   - Then: execute ALL browser tests yourself via MCP Chrome DevTools.
+   - For EACH Acceptance Criterion: navigate to the relevant page, interact with UI elements, take screenshots, verify expected behavior.
+   - Test responsive, dark mode, translations, empty states, error states.
+   - Record PASS/FAIL for each AC based on your browser testing.
+4. PHASE 4 (Verdict): Compile verdict based on your own findings + browser test results. Update story status.
+
+TEST EXECUTION RULES:
+- ONLY run tests for files changed in this story — NEVER the full test suite.
+- Use targeted test commands with EXPLICIT file paths or --filter.
+- Running "php bin/phpunit" without file arguments is FORBIDDEN.
+- NEVER use "composer test".
+- Pre-existing test failures are NOT your problem.
+
+COMMIT RULES:
+- ALL commit messages MUST start with "validate(%s): " followed by a description.
+  Example: "validate(%s): fix stored XSS in review content via Twig escape"
+  Example: "validate(%s): add missing CSRF check on profile update form"
+- Do NOT use generic messages like "validation completed".
+- If no real issues found, do NOT create an empty commit.
+
+STATUS UPDATE:
+- After validation, update sprint-status.yaml for this story:
+  - If ALL findings fixed + ALL ACs pass: set status to "validated"
+  - If unfixable issues remain: set status to "blocked"
+- Commit the status update separately: "validate(%s): update status to [new-status]"
+- Then push all commits.`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
+		Command:      fmt.Sprintf("claude -p [validate-story] --dangerously-skip-permissions --append-system-prompt [BMAD context]"),
+		WorkflowKey:  "validate-story",
+		AllowedTools: "Bash,Read,Write,Edit,Glob,Grep,Agent,Skill," + chromeMCPTools,
+	}
 }
 
 func newAction(workflowKey, prompt string) Action {

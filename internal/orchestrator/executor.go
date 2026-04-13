@@ -92,8 +92,13 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	if e.claudeModel != "" {
 		args = append(args, "--model", e.claudeModel)
 	}
-	if e.allowedTools != "" {
-		args = append(args, "--allowedTools", e.allowedTools)
+	// Per-action override takes priority over executor default
+	allowedTools := e.allowedTools
+	if action.AllowedTools != "" {
+		allowedTools = action.AllowedTools
+	}
+	if allowedTools != "" {
+		args = append(args, "--allowedTools", allowedTools)
 	}
 
 	// Resolve effort level: CLI override > per-workflow default
