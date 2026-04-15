@@ -39,6 +39,17 @@ bmad-autopilot run --epics 8,15-21
 
 The autopilot stops once all stories in the selected epics are done.
 
+## BMAD version compatibility
+
+Targets **BMAD v6.3.x** exclusively. The autopilot loads workflow context
+from the v6.3 skill layout (`.claude/skills/bmad-*/`) and aborts with a
+clear error if it detects an older install via `_bmad/_config/manifest.yaml`.
+
+To add support for a future BMAD major/minor line, extend
+`isSupportedVersion` and the skill-loading logic in
+`internal/orchestrator/bmad.go` — no retro-compat path is maintained for
+v6.0/v6.1/v6.2.
+
 ## Useful flags
 
 - `--status-file <path>`

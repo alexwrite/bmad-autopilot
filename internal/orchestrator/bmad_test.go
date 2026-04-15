@@ -19,16 +19,40 @@ func TestLoadBMADContextNoBmadDir(t *testing.T) {
 }
 
 func TestLoadBMADContextUnknownKey(t *testing.T) {
-	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "_bmad"), 0o755)
+	dir := setupTestBMAD(t, "6.3.0")
 	_, err := LoadBMADContext(dir, "nonexistent-workflow")
 	if err == nil {
 		t.Fatal("expected error for unknown workflow key")
 	}
 }
 
+func TestLoadBMADContextUnsupportedVersion(t *testing.T) {
+	dir := setupTestBMAD(t, "6.0.4")
+	_, err := LoadBMADContext(dir, "dev-story")
+	if err == nil {
+		t.Fatal("expected error for unsupported BMAD version")
+	}
+	if !strings.Contains(err.Error(), "unsupported BMAD version") {
+		t.Fatalf("expected unsupported-version error, got: %v", err)
+	}
+}
+
+func TestLoadBMADContextMissingSkill(t *testing.T) {
+	dir := setupTestBMAD(t, "6.3.0")
+	// Remove the dev-story skill dir to simulate a partial install.
+	os.RemoveAll(filepath.Join(dir, ".claude", "skills", "bmad-dev-story"))
+
+	_, err := LoadBMADContext(dir, "dev-story")
+	if err == nil {
+		t.Fatal("expected error when skill directory is missing")
+	}
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("expected not-installed error, got: %v", err)
+	}
+}
+
 func TestLoadBMADContextDevStory(t *testing.T) {
-	dir := setupTestBMAD(t)
+	dir := setupTestBMAD(t, "6.3.0")
 
 	ctx, err := LoadBMADContext(dir, "dev-story")
 	if err != nil {
@@ -37,25 +61,28 @@ func TestLoadBMADContextDevStory(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("expected non-nil context")
 	}
-	if !strings.Contains(ctx.Config, "Alex") {
-		t.Fatal("expected config to contain user name")
+	if ctx.Version != "6.3.0" {
+		t.Fatalf("expected Version 6.3.0, got %q", ctx.Version)
 	}
-	if !strings.Contains(ctx.Agent, "Developer Agent") {
-		t.Fatal("expected dev agent persona")
+	if ctx.SkillName != "bmad-dev-story" {
+		t.Fatalf("expected SkillName bmad-dev-story, got %q", ctx.SkillName)
 	}
-	if !strings.Contains(ctx.WorkflowXML, "Execute Workflow") {
-		t.Fatal("expected workflow engine content")
+	if !strings.Contains(ctx.ModuleCfg, "Alex") {
+		t.Fatal("expected module config to contain user name")
 	}
-	if !strings.Contains(ctx.WorkflowYAML, "dev-story") {
-		t.Fatal("expected workflow yaml content")
+	if !strings.Contains(ctx.AgentDoc, "Amelia") {
+		t.Fatal("expected dev agent persona (Amelia)")
 	}
-	if !strings.Contains(ctx.Instructions, "implement") {
-		t.Fatal("expected instructions content")
+	if !strings.Contains(ctx.Workflow, "implement") {
+		t.Fatal("expected workflow.md content")
+	}
+	if !strings.Contains(ctx.Checklist, "All tests pass") {
+		t.Fatal("expected checklist content")
 	}
 }
 
 func TestLoadBMADContextCreateStory(t *testing.T) {
-	dir := setupTestBMAD(t)
+	dir := setupTestBMAD(t, "6.3.0")
 
 	ctx, err := LoadBMADContext(dir, "create-story")
 	if err != nil {
@@ -64,33 +91,34 @@ func TestLoadBMADContextCreateStory(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("expected non-nil context")
 	}
-	if !strings.Contains(ctx.Agent, "Scrum Master") {
+	if !strings.Contains(ctx.AgentDoc, "Scrum Master") {
 		t.Fatal("expected SM agent persona for create-story")
+	}
+	if ctx.AgentName != "bmad-agent-sm" {
+		t.Fatalf("expected agent name bmad-agent-sm, got %q", ctx.AgentName)
 	}
 }
 
 func TestLoadBMADContextResolvesProjectRoot(t *testing.T) {
-	dir := setupTestBMAD(t)
+	dir := setupTestBMAD(t, "6.3.0")
 
 	ctx, err := LoadBMADContext(dir, "dev-story")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(ctx.WorkflowYAML, "{project-root}") {
+	if strings.Contains(ctx.Workflow, "{project-root}") {
 		t.Fatal("expected {project-root} to be resolved")
 	}
-	if !strings.Contains(ctx.WorkflowYAML, dir) {
+	if !strings.Contains(ctx.Workflow, dir) {
 		t.Fatalf("expected resolved path to contain workdir %q", dir)
 	}
 }
 
 func TestSystemPromptContainsYolo(t *testing.T) {
 	ctx := &BMADContext{
-		Config:       "user_name: Alex",
-		Agent:        "Developer Agent",
-		WorkflowXML:  "Execute Workflow",
-		WorkflowYAML: "name: dev-story",
-		Instructions: "step 1: implement",
+		Version:   "6.3.0",
+		SkillName: "bmad-dev-story",
+		Workflow:  "step 1: implement",
 	}
 	prompt := ctx.SystemPrompt()
 	if !strings.Contains(prompt, "#yolo") {
@@ -99,26 +127,30 @@ func TestSystemPromptContainsYolo(t *testing.T) {
 	if !strings.Contains(prompt, "AUTONOMOUS") {
 		t.Fatal("expected system prompt to contain autonomous directive")
 	}
+	if !strings.Contains(prompt, "v6.3.0") {
+		t.Fatal("expected system prompt to announce detected BMAD version")
+	}
 }
 
 func TestSystemPromptContainsAllSections(t *testing.T) {
 	ctx := &BMADContext{
-		Config:       "config content",
-		Agent:        "agent content",
-		WorkflowXML:  "engine content",
-		WorkflowYAML: "workflow content",
-		Instructions: "instructions content",
-		Checklist:    "checklist content",
+		Version:   "6.3.0",
+		SkillName: "bmad-dev-story",
+		AgentName: "bmad-agent-dev",
+		ModuleCfg: "config content",
+		AgentDoc:  "agent content",
+		SkillDoc:  "skill content",
+		Workflow:  "instructions content",
+		Checklist: "checklist content",
 	}
 	prompt := ctx.SystemPrompt()
 
 	sections := []string{
 		"BMAD MODULE CONFIG",
-		"BMAD AGENT PERSONA",
-		"BMAD WORKFLOW ENGINE",
-		"WORKFLOW CONFIGURATION",
-		"WORKFLOW INSTRUCTIONS",
-		"VALIDATION CHECKLIST",
+		"BMAD AGENT PERSONA (bmad-agent-dev)",
+		"SKILL DECLARATION (bmad-dev-story/SKILL.md)",
+		"WORKFLOW INSTRUCTIONS (workflow.md)",
+		"VALIDATION CHECKLIST (checklist.md)",
 	}
 	for _, s := range sections {
 		if !strings.Contains(prompt, s) {
@@ -129,11 +161,15 @@ func TestSystemPromptContainsAllSections(t *testing.T) {
 
 func TestSystemPromptSkipsEmptySections(t *testing.T) {
 	ctx := &BMADContext{
-		Instructions: "step 1: do something",
+		SkillName: "bmad-dev-story",
+		Workflow:  "step 1: do something",
 	}
 	prompt := ctx.SystemPrompt()
 	if strings.Contains(prompt, "BMAD MODULE CONFIG") {
-		t.Fatal("expected empty config section to be skipped")
+		t.Fatal("expected empty module config section to be skipped")
+	}
+	if strings.Contains(prompt, "BMAD AGENT PERSONA") {
+		t.Fatal("expected empty agent persona section to be skipped")
 	}
 	if !strings.Contains(prompt, "WORKFLOW INSTRUCTIONS") {
 		t.Fatal("expected instructions section to be present")
@@ -146,58 +182,122 @@ func TestHasContent(t *testing.T) {
 		t.Fatal("expected empty context to have no content")
 	}
 
-	withInstructions := &BMADContext{Instructions: "step 1"}
-	if !withInstructions.HasContent() {
-		t.Fatal("expected context with instructions to have content")
+	withWorkflow := &BMADContext{Workflow: "step 1"}
+	if !withWorkflow.HasContent() {
+		t.Fatal("expected context with workflow to have content")
 	}
 }
 
-// setupTestBMAD creates a minimal BMAD file structure for testing.
-func setupTestBMAD(t *testing.T) string {
+func TestDetectBMADVersionParsesManifest(t *testing.T) {
+	dir := t.TempDir()
+	bmadRoot := filepath.Join(dir, "_bmad")
+	cfgDir := filepath.Join(bmadRoot, "_config")
+	os.MkdirAll(cfgDir, 0o755)
+
+	manifest := `installation:
+  version: 6.3.0
+  installDate: 2026-04-15T00:00:00.000Z
+modules:
+  - name: core
+    version: 6.3.0
+`
+	if err := os.WriteFile(filepath.Join(cfgDir, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	got, err := detectBMADVersion(bmadRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "6.3.0" {
+		t.Fatalf("expected 6.3.0, got %q", got)
+	}
+}
+
+func TestIsSupportedVersion(t *testing.T) {
+	cases := map[string]bool{
+		"":       true, // unknown → optimistic proceed
+		"6.3.0":  true,
+		"6.3.5":  true,
+		"6.3":    true,
+		"6.0.4":  false,
+		"6.2.0":  false,
+		"7.0.0":  false,
+	}
+	for v, want := range cases {
+		if got := isSupportedVersion(v); got != want {
+			t.Errorf("isSupportedVersion(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
+
+// setupTestBMAD builds a minimal v6.3 BMAD layout:
+//   - _bmad/_config/manifest.yaml (version)
+//   - _bmad/bmm/config.yaml       (user-level settings)
+//   - .claude/skills/bmad-<workflow>/{SKILL.md, workflow.md, checklist.md}
+//   - .claude/skills/bmad-agent-<role>/SKILL.md
+func setupTestBMAD(t *testing.T, version string) string {
 	t.Helper()
 	dir := t.TempDir()
 
+	manifest := "installation:\n  version: " + version + "\nmodules:\n  - name: core\n"
+
 	files := map[string]string{
+		"_bmad/_config/manifest.yaml": manifest,
 		"_bmad/bmm/config.yaml": `user_name: Alex
 communication_language: Français
 output_folder: "{project-root}/_bmad-output"
 `,
-		"_bmad/bmm/agents/dev.md": `---
-name: "dev"
-description: "Developer Agent"
+		".claude/skills/bmad-agent-dev/SKILL.md": `---
+name: bmad-agent-dev
+description: Developer agent
 ---
-<agent name="Amelia" title="Developer Agent">
-<persona><role>Senior Software Engineer</role></persona>
-</agent>
+# Amelia
+Senior software engineer.
 `,
-		"_bmad/bmm/agents/sm.md": `---
-name: "sm"
-description: "Scrum Master"
+		".claude/skills/bmad-agent-sm/SKILL.md": `---
+name: bmad-agent-sm
+description: Scrum Master
 ---
-<agent name="Bob" title="Scrum Master">
-<persona><role>Technical Scrum Master</role></persona>
-</agent>
+# Bob
+Technical Scrum Master.
 `,
-		"_bmad/core/tasks/workflow.xml": `<task id="workflow.xml" name="Execute Workflow">
-  <objective>Execute given workflow</objective>
-  <flow><step n="1">Load and Initialize</step></flow>
-</task>
+		".claude/skills/bmad-agent-qa/SKILL.md": `---
+name: bmad-agent-qa
+description: QA agent
+---
+# Murat
+QA test architect.
 `,
-		"_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml": `name: dev-story
-description: "Execute story implementation"
-config_source: "{project-root}/_bmad/bmm/config.yaml"
-installed_path: "{project-root}/_bmad/bmm/workflows/4-implementation/dev-story"
-instructions: "{project-root}/_bmad/bmm/workflows/4-implementation/dev-story/instructions.xml"
+		".claude/skills/bmad-dev-story/SKILL.md": `---
+name: bmad-dev-story
+description: Execute story implementation
+---
+Follow ./workflow.md.
 `,
-		"_bmad/bmm/workflows/4-implementation/dev-story/instructions.xml": `<instructions>
-  <step n="1">Read story file and implement all tasks</step>
-</instructions>
+		".claude/skills/bmad-dev-story/workflow.md":  "Read the story at {project-root}/story.md and implement all tasks.\n",
+		".claude/skills/bmad-dev-story/checklist.md": "- [ ] All tests pass\n",
+		".claude/skills/bmad-create-story/SKILL.md": `---
+name: bmad-create-story
+description: Draft a story file
+---
+Follow ./workflow.md.
 `,
-		"_bmad/bmm/workflows/4-implementation/dev-story/checklist.md":        "- [ ] All tests pass\n",
-		"_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml":    "name: create-story\ndescription: Create story file\n",
-		"_bmad/bmm/workflows/4-implementation/create-story/instructions.xml": "<instructions><step n=\"1\">Create story</step></instructions>\n",
-		"_bmad/bmm/workflows/4-implementation/code-review/workflow.yaml":     "name: code-review\ndescription: Code review\n",
-		"_bmad/bmm/workflows/4-implementation/code-review/instructions.xml":  "<instructions><step n=\"1\">Review code</step></instructions>\n",
+		".claude/skills/bmad-create-story/workflow.md": "Create the story spec.\n",
+		".claude/skills/bmad-code-review/SKILL.md": `---
+name: bmad-code-review
+description: Review a story implementation
+---
+Follow ./workflow.md.
+`,
+		".claude/skills/bmad-code-review/workflow.md": "Review the implementation.\n",
+		".claude/skills/bmad-validate-story/SKILL.md": `---
+name: bmad-validate-story
+description: Validate a story
+---
+Follow ./workflow.md.
+`,
+		".claude/skills/bmad-validate-story/workflow.md": "Validate every acceptance criterion.\n",
 	}
 
 	for relPath, content := range files {

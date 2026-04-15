@@ -47,8 +47,8 @@ func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 func ReviewAction(storyNumber string) Action {
 	return newAction(
 		"code-review",
-		fmt.Sprintf(`Execute the code-review workflow for story %s in #yolo mode.
-Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+		fmt.Sprintf(`Execute the bmad-code-review skill for story %s in #yolo mode.
+Follow the workflow instructions embedded in this prompt — they are the full skill definition.
 
 PERSONA: You are a grey-hat security researcher AND a senior dev reviewer.
 You think like an attacker but fix like a defender. You hunt BOTH security vulns AND classic bugs.
@@ -120,8 +120,8 @@ func ShouldContinueReview(status string) bool {
 func createStoryAction(storyNumber string) Action {
 	return newAction(
 		"create-story",
-		fmt.Sprintf(`Execute the create-story workflow for story %s in #yolo mode.
-Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+		fmt.Sprintf(`Execute the bmad-create-story skill for story %s in #yolo mode.
+Follow the workflow instructions embedded in this prompt — they are the full skill definition.
 Auto-complete all steps autonomously as an expert Scrum Master.
 
 TEST-FIRST MANDATE:
@@ -147,10 +147,10 @@ STATUS UPDATE:
 func devStoryAction(storyNumber string) Action {
 	return newAction(
 		"dev-story",
-		fmt.Sprintf(`Execute the dev-story workflow for story %s in #yolo mode.
+		fmt.Sprintf(`Execute the bmad-dev-story skill for story %s in #yolo mode.
 Read the story file, implement ALL tasks and subtasks IN ORDER.
 Write tests for each task. Mark tasks [x] only when tests pass.
-Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+Follow the workflow instructions embedded in this prompt — they are the full skill definition.
 
 TEST EXECUTION RULES:
 - ONLY run YOUR tests — the tests you wrote or modified for this story.
@@ -179,8 +179,8 @@ const chromeMCPTools = "mcp__chrome-devtools__navigate_page,mcp__chrome-devtools
 
 func validateStoryAction(storyNumber string) Action {
 	return Action{
-		Prompt: fmt.Sprintf(`Execute the validate-story workflow for story %s in #yolo mode.
-Follow the workflow engine (workflow.xml) to process the workflow configuration and instructions.
+		Prompt: fmt.Sprintf(`Execute the bmad-validate-story skill for story %s in #yolo mode.
+Follow the workflow instructions embedded in this prompt — they are the full skill definition.
 
 CRITICAL CONTEXT — FULLY AUTONOMOUS VALIDATION (NO HUMAN):
 You are running in AUTOPILOT mode. There is NO human to test in the browser.
@@ -231,7 +231,7 @@ STATUS UPDATE:
   - If unfixable issues remain: set status to "blocked"
 - Commit the status update separately: "validate(%s): update status to [new-status]"
 - Then push all commits.`, storyNumber, storyNumber, storyNumber, storyNumber, storyNumber),
-		Command:      fmt.Sprintf("claude -p [validate-story] --dangerously-skip-permissions --append-system-prompt [BMAD context]"),
+		Command:      "claude -p [bmad-validate-story skill] --dangerously-skip-permissions --append-system-prompt [BMAD context]",
 		WorkflowKey:  "validate-story",
 		AllowedTools: "Bash,Read,Write,Edit,Glob,Grep,Agent,Skill," + chromeMCPTools,
 	}
@@ -240,7 +240,7 @@ STATUS UPDATE:
 func newAction(workflowKey, prompt string) Action {
 	return Action{
 		Prompt:      prompt,
-		Command:     fmt.Sprintf("claude -p [%s] --dangerously-skip-permissions --append-system-prompt [BMAD context]", workflowKey),
+		Command:     fmt.Sprintf("claude -p [bmad-%s skill] --dangerously-skip-permissions --append-system-prompt [BMAD context]", workflowKey),
 		WorkflowKey: workflowKey,
 	}
 }
