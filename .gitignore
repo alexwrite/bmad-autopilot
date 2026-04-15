@@ -32,7 +32,7 @@ go.work.sum
 # .vscode/
 
 # Local build output
-bmad-autopilot/
+/bmad-autopilot
 
 # Salvaged BMAD custom prompts (not part of the binary)
 /customs/
