@@ -25,6 +25,8 @@ type workflowSpec struct {
 }
 
 // Workflow registry: every action the autopilot can fire maps to a v6.3 skill.
+// Note: BMAD v6.3 ships no "validate-story" skill — code-review is the final
+// gate. If a dedicated validation skill is introduced later, add it here.
 var workflowRegistry = map[string]workflowSpec{
 	"create-story": {
 		skill:      "bmad-create-story",
@@ -40,11 +42,6 @@ var workflowRegistry = map[string]workflowSpec{
 		skill:      "bmad-code-review",
 		agentSkill: "bmad-agent-dev",
 		effort:     "high",
-	},
-	"validate-story": {
-		skill:      "bmad-validate-story",
-		agentSkill: "bmad-agent-qa",
-		effort:     "max",
 	},
 }
 
@@ -141,6 +138,10 @@ func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
 }
 
 // SystemPrompt builds the full system prompt to inject via --append-system-prompt.
+// The autopilot overlay is intentionally minimal: it only adds what BMAD's
+// interactive-by-default workflows cannot do on their own (autonomy, one commit
+// per step, security-first decision making). Everything else is delegated to
+// the BMAD skill content appended below.
 func (ctx *BMADContext) SystemPrompt() string {
 	var sb strings.Builder
 
@@ -155,28 +156,45 @@ func (ctx *BMADContext) SystemPrompt() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("You are executing a BMAD workflow in AUTONOMOUS #yolo mode.")
-	if ctx.Version != "" {
-		sb.WriteString(fmt.Sprintf("\nBMAD installation: v%s. Skill: %s.", ctx.Version, ctx.SkillName))
-	}
-	sb.WriteString("\nCRITICAL RULES:")
-	sb.WriteString("\n- Do NOT wait for user input at any step")
-	sb.WriteString("\n- Do NOT display menus or ask questions")
-	sb.WriteString("\n- Auto-complete ALL steps as a simulated expert user")
-	sb.WriteString("\n- Follow the workflow instructions below IN EXACT ORDER")
-	sb.WriteString("\n- Save outputs after EACH section")
-	sb.WriteString("\n- You have the full skill context below — use it")
-	sb.WriteString("\n\nTEST EXECUTION POLICY (GLOBAL — overrides everything):")
-	sb.WriteString("\n- NEVER run the full test suite. Running 'php bin/phpunit' without explicit file paths is FORBIDDEN.")
-	sb.WriteString("\n- NEVER use 'composer test' (Composer 300s timeout + runs full suite).")
-	sb.WriteString("\n- ALWAYS specify test file paths: 'php bin/phpunit tests/Unit/A.php tests/Functional/B.php'")
-	sb.WriteString("\n- Before testing: list modified files → identify their tests + dependent tests → run ONLY those.")
-	sb.WriteString("\n- Pre-existing test failures are NOT your problem. Do NOT investigate or mention them.")
-	sb.WriteString("\n\nBROWSER TESTING POLICY (for validate-story workflows):")
-	sb.WriteString("\n- When browser testing is required, use MCP Chrome DevTools tools (mcp__chrome-devtools__*).")
-	sb.WriteString("\n- You ARE the browser tester. Navigate pages, click elements, fill forms, take screenshots.")
-	sb.WriteString("\n- Test responsive (resize to mobile/tablet/desktop), dark mode (toggle data-theme), i18n (switch locale).")
-	sb.WriteString("\n- Record PASS/FAIL for each Acceptance Criterion based on your browser observations.\n")
+	sb.WriteString(`<mode>
+You are running a BMAD workflow autonomously. No human interaction is
+possible: every HALT, ASK, or "waiting for your numbered choice" in the
+workflow must be resolved by making the right call at the right time,
+not by defaulting to a fallback option.
+</mode>
+
+<decisions>
+When the workflow asks for a choice or when you encounter a finding:
+- Evaluate the real context (code, ACs, current status, related findings).
+- Decide in this priority order: security → maintainability → conformity
+  to project patterns.
+- Every finding (CRITICAL / MAJOR / MINOR) is fixed properly, never
+  worked around or deferred. Apply the best development, security
+  (OWASP) and maintainability patterns.
+</decisions>
+
+<commits>
+- EXACTLY ONE commit per workflow step, created at the very end once all
+  work is complete and the story / files are up to date.
+  (create-story → 1 commit, dev-story → 1 commit, code-review → 1 commit.)
+- Mandatory format: <phase>(<story>): <concrete description>
+  where <phase> is one of {create, dev, review}.
+- Push immediately after that final commit.
+</commits>
+
+<story-file>
+Fully document the story as the BMAD workflow mandates: Dev Agent Record
+(decisions, completion notes), File List (every touched file, relative
+paths), Change Log, Review Findings. A reviewer must be able to
+reconstruct WHAT you did, HOW, and WHY from the story file alone.
+</story-file>
+
+<bmad>
+For everything else — status transitions, File List, DoD, tests, findings,
+checklist, test rules — follow the BMAD workflow appended below strictly,
+to the letter.
+</bmad>
+`)
 
 	writeSection("BMAD MODULE CONFIG", ctx.ModuleCfg)
 	if ctx.AgentDoc != "" {

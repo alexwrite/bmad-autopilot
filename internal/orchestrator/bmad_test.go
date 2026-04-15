@@ -114,21 +114,21 @@ func TestLoadBMADContextResolvesProjectRoot(t *testing.T) {
 	}
 }
 
-func TestSystemPromptContainsYolo(t *testing.T) {
+func TestSystemPromptContainsOverlay(t *testing.T) {
 	ctx := &BMADContext{
 		Version:   "6.3.0",
 		SkillName: "bmad-dev-story",
 		Workflow:  "step 1: implement",
 	}
 	prompt := ctx.SystemPrompt()
-	if !strings.Contains(prompt, "#yolo") {
-		t.Fatal("expected system prompt to contain yolo mode")
+	if !strings.Contains(prompt, "autonomously") {
+		t.Fatal("expected system prompt to enforce autonomous execution")
 	}
-	if !strings.Contains(prompt, "AUTONOMOUS") {
-		t.Fatal("expected system prompt to contain autonomous directive")
+	if !strings.Contains(prompt, "<commits>") {
+		t.Fatal("expected system prompt to declare the commits overlay")
 	}
-	if !strings.Contains(prompt, "v6.3.0") {
-		t.Fatal("expected system prompt to announce detected BMAD version")
+	if !strings.Contains(prompt, "EXACTLY ONE commit per workflow step") {
+		t.Fatal("expected one-commit-per-step rule")
 	}
 }
 
@@ -291,13 +291,6 @@ description: Review a story implementation
 Follow ./workflow.md.
 `,
 		".claude/skills/bmad-code-review/workflow.md": "Review the implementation.\n",
-		".claude/skills/bmad-validate-story/SKILL.md": `---
-name: bmad-validate-story
-description: Validate a story
----
-Follow ./workflow.md.
-`,
-		".claude/skills/bmad-validate-story/workflow.md": "Validate every acceptance criterion.\n",
 	}
 
 	for relPath, content := range files {

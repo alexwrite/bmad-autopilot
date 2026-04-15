@@ -281,8 +281,12 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		// Check if Claude updated the status itself
 		currentStatus, _ := r.statusForStory(story.Key)
 		if !ShouldContinueReview(currentStatus) {
-			r.log.Log("REVIEW", "story %s is %s after round %d — no judge needed", story.Key, currentStatus, round)
-			return currentStatus, nil
+			if round < MinReviewRounds {
+				r.log.Log("REVIEW", "story %s is %s after round %d — forcing fresh-eyes pass (min %d rounds)", story.Key, currentStatus, round, MinReviewRounds)
+			} else {
+				r.log.Log("REVIEW", "story %s is %s after round %d — no judge needed", story.Key, currentStatus, round)
+				return currentStatus, nil
+			}
 		}
 
 		// Claude didn't set "done" — call judge ONLY NOW to decide
@@ -300,13 +304,18 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 				verdict.NeedsMoreWork, verdict.RecommendedStatus, verdict.Summary)
 		}
 
-		// Judge says no more work needed — mark done
+		// Judge says no more work needed — mark done, but only after the
+		// fresh-eyes floor has been reached.
 		if judgeErr == nil && !verdict.NeedsMoreWork {
-			r.log.Log("JUDGE", "no more work needed — marking %s as done", story.Key)
-			if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
-				return "", err
+			if round < MinReviewRounds {
+				r.log.Log("JUDGE", "verdict clean at round %d — forcing fresh-eyes pass (min %d rounds)", round, MinReviewRounds)
+			} else {
+				r.log.Log("JUDGE", "no more work needed — marking %s as done", story.Key)
+				if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
+					return "", err
+				}
+				return "done", nil
 			}
-			return "done", nil
 		}
 
 		if round == MaxReviewRounds {
