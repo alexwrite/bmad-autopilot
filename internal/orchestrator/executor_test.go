@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPushEvidencePattern(t *testing.T) {
 	cases := []struct {
@@ -197,5 +200,81 @@ func TestIsAuthError(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("%s: isAuthError(%q) = %v, want %v", tt.name, tt.output, got, tt.want)
 		}
+	}
+}
+
+func TestIsTransientAPIError(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{
+			name:   "529 overloaded",
+			output: `API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			want:   true,
+		},
+		{
+			name:   "500 server error",
+			output: `API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}`,
+			want:   true,
+		},
+		{
+			name:   "503 service unavailable",
+			output: `API Error: 503 upstream unavailable`,
+			want:   true,
+		},
+		{
+			name:   "rate_limit_error type",
+			output: `{"type":"error","error":{"type":"rate_limit_error","message":"Too many requests"}}`,
+			want:   true,
+		},
+		{
+			name:   "401 auth takes precedence over transient detection",
+			output: `Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired."}}`,
+			want:   false,
+		},
+		{
+			name:   "400 bad request — not transient",
+			output: `API Error: 400 invalid request`,
+			want:   false,
+		},
+		{
+			name:   "plain exit error — not transient",
+			output: `claude: command exited with status 1`,
+			want:   false,
+		},
+	}
+
+	for _, tt := range cases {
+		got := isTransientAPIError(tt.output)
+		if got != tt.want {
+			t.Errorf("%s: isTransientAPIError(...) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestFirstLine(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "no output"},
+		{"   \n   \n", "no output"},
+		{"first\nsecond\n", "first"},
+		{"   leading spaces\ntail\n", "leading spaces"},
+	}
+	for _, tt := range cases {
+		got := firstLine(tt.in)
+		if got != tt.want {
+			t.Errorf("firstLine(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+
+	// Truncation above 240 chars
+	long := strings.Repeat("z", 500)
+	got := firstLine(long)
+	if !strings.HasSuffix(got, "…") || len(got) > 260 {
+		t.Errorf("expected truncated single-line output with ellipsis, got len=%d", len(got))
 	}
 }

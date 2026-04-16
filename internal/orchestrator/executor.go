@@ -15,8 +15,18 @@ import (
 
 var pushEvidencePattern = regexp.MustCompile(`(?im)(^to\s+\S+|everything up-to-date|new branch|set up to track)`)
 
+// transientAPIPattern matches Anthropic API responses that are safe to retry:
+// any 5xx status, plus the explicit overloaded_error / rate_limit_error types
+// returned under high load. Auth and 4xx remain non-retryable.
+var transientAPIPattern = regexp.MustCompile(`(?i)(api error:\s*5\d\d|overloaded_error|rate_limit_error|"type"\s*:\s*"overloaded"|"type"\s*:\s*"rate_limit")`)
+
 // ErrAuthExpired signals that the Claude API token has expired.
 var ErrAuthExpired = errors.New("authentication token expired")
+
+// ErrTransientAPI signals a retryable upstream error (5xx, overloaded,
+// rate-limited). The retry wrapper consumes this; it should not reach the
+// top-level run loop.
+var ErrTransientAPI = errors.New("transient upstream API error")
 
 type ExecResult struct {
 	RawOutput        string
@@ -162,9 +172,28 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 		if isAuthError(allOutput) {
 			return result, fmt.Errorf("%w: %v", ErrAuthExpired, runErr)
 		}
+		if isTransientAPIError(allOutput) {
+			return result, fmt.Errorf("%w: %s", ErrTransientAPI, firstLine(allOutput))
+		}
 		return result, fmt.Errorf("claude prompt failed (exit %v): %w", cmd.ProcessState.ExitCode(), runErr)
 	}
 	return result, nil
+}
+
+// firstLine returns the first non-empty line of output, trimmed. Used to
+// produce a short ErrTransientAPI message without dragging the whole stream
+// into the log.
+func firstLine(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			if len(line) > 240 {
+				line = line[:240] + "…"
+			}
+			return line
+		}
+	}
+	return "no output"
 }
 
 // extractResultFromStream parses stream-json output and extracts the final result text.
@@ -211,6 +240,16 @@ func isAuthError(output string) bool {
 	return strings.Contains(lower, "oauth token has expired") ||
 		strings.Contains(lower, "authentication_error") ||
 		(strings.Contains(lower, "401") && strings.Contains(lower, "token"))
+}
+
+// isTransientAPIError detects upstream errors that are safe to retry
+// (5xx, overloaded, rate-limited). Auth errors are checked separately and
+// take precedence — never retry on 401.
+func isTransientAPIError(output string) bool {
+	if isAuthError(output) {
+		return false
+	}
+	return transientAPIPattern.MatchString(output)
 }
 
 // extractClaudeOutput parses the JSON response from `claude -p --output-format json`.

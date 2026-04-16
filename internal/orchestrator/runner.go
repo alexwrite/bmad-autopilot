@@ -67,10 +67,12 @@ func New(cfg Config) (*Runner, error) {
 		return nil, fmt.Errorf("init logger: %w", err)
 	}
 
+	baseExecutor := NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand, cfg.ClaudeEffort)
+
 	return &Runner{
 		cfg:      cfg,
 		brain:    selectedBrain,
-		executor: NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand, cfg.ClaudeEffort),
+		executor: newRetryingExecutor(baseExecutor, DefaultRetryConfig(), logger),
 		log:      logger,
 	}, nil
 }
