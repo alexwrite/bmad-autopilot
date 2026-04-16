@@ -135,6 +135,9 @@ func (r *Runner) runStoryFilter(ctx context.Context) error {
 	}
 
 	r.log.Log("DONE", "all requested stories processed")
+	if finalStatus, loadErr := LoadSprintStatus(r.cfg.StatusFile); loadErr == nil {
+		r.auditDeferred(finalStatus)
+	}
 	return nil
 }
 
@@ -159,6 +162,7 @@ func (r *Runner) runLoop(ctx context.Context) error {
 			} else {
 				r.log.Log("DONE", "all non-retrospective stories are done")
 			}
+			r.auditDeferred(sprintStatus)
 			return nil
 		}
 
@@ -362,6 +366,29 @@ func (r *Runner) ensureStatus(ctx context.Context, storyKey, newStatus string) e
 	}
 	r.log.Log("STATUS", "%s → %s [autopilot]", storyKey, newStatus)
 	return nil
+}
+
+// auditDeferred scans deferred-work.md for open items whose target story
+// already reached a terminal state (done/validated). These are either
+// reviewer oversights (forgot to close the item) or scope drift (the item
+// actually belongs to a different story). Logged as warnings so a human can
+// reconcile during the next sprint review — never fatal, since the ledger
+// is advisory.
+func (r *Runner) auditDeferred(sprintStatus SprintStatus) {
+	orphans, err := ScanDeferredOrphans(r.cfg.Workdir, sprintStatus)
+	if err != nil {
+		r.log.Log("DEFERRED", "audit skipped: %v", err)
+		return
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	r.log.Log("DEFERRED", "%d open item(s) whose target story is already %s — reconcile manually:",
+		len(orphans), "done/validated")
+	for _, o := range orphans {
+		r.log.Log("DEFERRED", "  line %d → story %s (%s): %s",
+			o.SourceLine, o.TargetStory, o.TargetStatus, o.ItemText)
+	}
 }
 
 // blockStory marks a story as "blocked" and logs the reason.
