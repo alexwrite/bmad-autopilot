@@ -248,9 +248,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		currentStatus, _ := r.statusForStory(story.Key)
 		expectedStatus := defaultStatusForWorkflow(action.WorkflowKey)
 		if normalizeStatus(currentStatus) == normalizeStatus(expectedStatus) {
-			r.log.Log("STATUS", "Claude set %s correctly — no judge needed", expectedStatus)
+			r.log.Log("STATUS", "%s — Claude set %s correctly — no judge needed", story.Key, expectedStatus)
 		} else {
-			r.log.Log("GUARD", "Claude left status at %q, autopilot correcting to %q", currentStatus, expectedStatus)
+			r.log.Log("GUARD", "%s — Claude left status at %q, autopilot correcting to %q", story.Key, currentStatus, expectedStatus)
 			if err := r.ensureStatus(ctx, story.Key, expectedStatus); err != nil {
 				return "", err
 			}
@@ -309,7 +309,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		}
 
 		// Claude didn't set "done" — call judge ONLY NOW to decide
-		r.log.Log("JUDGE", "Claude didn't resolve status, calling judge for round %d", round)
+		r.log.Log("JUDGE", "%s — Claude didn't resolve status, calling judge for round %d", story.Key, round)
 		verdict, judgeErr := r.callJudge(ctx, story.Key, "code-review", result.RawOutput)
 		if judgeErr != nil {
 			r.log.SaveError("judge", round, judgeErr.Error())
@@ -418,7 +418,7 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action, ro
 	if err != nil {
 		return ExecResult{}, "", "", err
 	}
-	r.log.Log("ACTION", "%s", action.WorkflowKey)
+	r.log.Log("ACTION", "%s — %s", action.WorkflowKey, storyKey)
 	r.log.LogRaw("  status(before): %s", beforeStatus)
 
 	commandCtx := ctx

@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -251,6 +252,27 @@ func TestIsTransientAPIError(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("%s: isTransientAPIError(...) = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestExtractResultFromStreamOversizedLine guards against the regression
+// where a single stream-json event exceeds bufio.Scanner's 64 KiB default,
+// causing silent extraction failure and a full raw-stream dump to stdout.
+func TestExtractResultFromStreamOversizedLine(t *testing.T) {
+	huge := strings.Repeat("x", 200*1024) // 200 KiB, >> 64 KiB default
+	stream := fmt.Sprintf(
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_result","content":%q}]}}`+"\n"+
+			`{"type":"result","subtype":"success","result":"Story 1-5 shipped."}`+"\n",
+		huge,
+	)
+
+	got := extractResultFromStream(stream)
+	if got != "Story 1-5 shipped." {
+		preview := got
+		if len(preview) > 120 {
+			preview = preview[:120] + "…"
+		}
+		t.Fatalf("expected final result text, got %q (len=%d)", preview, len(got))
 	}
 }
 

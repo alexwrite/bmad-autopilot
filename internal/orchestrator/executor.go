@@ -196,6 +196,14 @@ func firstLine(output string) string {
 	return "no output"
 }
 
+// maxStreamLineBytes caps a single stream-json event to 10 MiB. Stream-json
+// emits one JSON object per line and a single tool_result or thinking block
+// can easily exceed the bufio.Scanner default of 64 KiB. When a line
+// overflows, the scanner fails silently — extraction returns "", the caller
+// falls back to dumping the entire raw stream to stdout, and the review log
+// becomes a wall of JSON.
+const maxStreamLineBytes = 10 * 1024 * 1024
+
 // extractResultFromStream parses stream-json output and extracts the final result text.
 // Also concatenates all assistant text content blocks.
 func extractResultFromStream(stream string) string {
@@ -203,6 +211,7 @@ func extractResultFromStream(stream string) string {
 	var textParts []string
 
 	scanner := bufio.NewScanner(strings.NewReader(stream))
+	scanner.Buffer(make([]byte, 0, 1024*1024), maxStreamLineBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
