@@ -257,6 +257,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		}
 	}
 
+	// --- Phase 2: Review loop ---
 	// Defense in depth: if the story is already in a terminal state when we
 	// reach Phase 2, skip the review loop entirely. Without this guard, a
 	// story mistakenly re-selected in "done" state would still trigger
@@ -270,7 +271,6 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		return entryStatus, nil
 	}
 
-	// --- Phase 2: Review loop ---
 	reviewAction := ReviewAction(storyNumber)
 	for round := 1; round <= MaxReviewRounds; round++ {
 		if invocations >= MaxInvocationsPerStory {
