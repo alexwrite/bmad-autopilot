@@ -67,10 +67,12 @@ func New(cfg Config) (*Runner, error) {
 		return nil, fmt.Errorf("init logger: %w", err)
 	}
 
+	baseExecutor := NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand, cfg.ClaudeEffort)
+
 	return &Runner{
 		cfg:      cfg,
 		brain:    selectedBrain,
-		executor: NewClaudeExecutor(cfg.Workdir, cfg.ClaudeModel, cfg.ClaudeCommand, cfg.ClaudeEffort),
+		executor: newRetryingExecutor(baseExecutor, DefaultRetryConfig(), logger),
 		log:      logger,
 	}, nil
 }
@@ -133,6 +135,9 @@ func (r *Runner) runStoryFilter(ctx context.Context) error {
 	}
 
 	r.log.Log("DONE", "all requested stories processed")
+	if finalStatus, loadErr := LoadSprintStatus(r.cfg.StatusFile); loadErr == nil {
+		r.auditDeferred(finalStatus)
+	}
 	return nil
 }
 
@@ -157,6 +162,7 @@ func (r *Runner) runLoop(ctx context.Context) error {
 			} else {
 				r.log.Log("DONE", "all non-retrospective stories are done")
 			}
+			r.auditDeferred(sprintStatus)
 			return nil
 		}
 
@@ -242,9 +248,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		currentStatus, _ := r.statusForStory(story.Key)
 		expectedStatus := defaultStatusForWorkflow(action.WorkflowKey)
 		if normalizeStatus(currentStatus) == normalizeStatus(expectedStatus) {
-			r.log.Log("STATUS", "Claude set %s correctly — no judge needed", expectedStatus)
+			r.log.Log("STATUS", "%s — Claude set %s correctly — no judge needed", story.Key, expectedStatus)
 		} else {
-			r.log.Log("GUARD", "Claude left status at %q, autopilot correcting to %q", currentStatus, expectedStatus)
+			r.log.Log("GUARD", "%s — Claude left status at %q, autopilot correcting to %q", story.Key, currentStatus, expectedStatus)
 			if err := r.ensureStatus(ctx, story.Key, expectedStatus); err != nil {
 				return "", err
 			}
@@ -252,6 +258,19 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 	}
 
 	// --- Phase 2: Review loop ---
+	// Defense in depth: if the story is already in a terminal state when we
+	// reach Phase 2, skip the review loop entirely. Without this guard, a
+	// story mistakenly re-selected in "done" state would still trigger
+	// MinReviewRounds reviews per outer-loop iteration (see runLoop).
+	entryStatus, err := r.statusForStory(story.Key)
+	if err != nil {
+		return "", err
+	}
+	if !ShouldContinueReview(entryStatus) {
+		r.log.Log("REVIEW", "story %s already in terminal state %q — skipping review loop", story.Key, entryStatus)
+		return entryStatus, nil
+	}
+
 	reviewAction := ReviewAction(storyNumber)
 	for round := 1; round <= MaxReviewRounds; round++ {
 		if invocations >= MaxInvocationsPerStory {
@@ -281,12 +300,16 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		// Check if Claude updated the status itself
 		currentStatus, _ := r.statusForStory(story.Key)
 		if !ShouldContinueReview(currentStatus) {
-			r.log.Log("REVIEW", "story %s is %s after round %d — no judge needed", story.Key, currentStatus, round)
-			return currentStatus, nil
+			if round < MinReviewRounds {
+				r.log.Log("REVIEW", "story %s is %s after round %d — forcing fresh-eyes pass (min %d rounds)", story.Key, currentStatus, round, MinReviewRounds)
+			} else {
+				r.log.Log("REVIEW", "story %s is %s after round %d — no judge needed", story.Key, currentStatus, round)
+				return currentStatus, nil
+			}
 		}
 
 		// Claude didn't set "done" — call judge ONLY NOW to decide
-		r.log.Log("JUDGE", "Claude didn't resolve status, calling judge for round %d", round)
+		r.log.Log("JUDGE", "%s — Claude didn't resolve status, calling judge for round %d", story.Key, round)
 		verdict, judgeErr := r.callJudge(ctx, story.Key, "code-review", result.RawOutput)
 		if judgeErr != nil {
 			r.log.SaveError("judge", round, judgeErr.Error())
@@ -300,13 +323,18 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 				verdict.NeedsMoreWork, verdict.RecommendedStatus, verdict.Summary)
 		}
 
-		// Judge says no more work needed — mark done
+		// Judge says no more work needed — mark done, but only after the
+		// fresh-eyes floor has been reached.
 		if judgeErr == nil && !verdict.NeedsMoreWork {
-			r.log.Log("JUDGE", "no more work needed — marking %s as done", story.Key)
-			if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
-				return "", err
+			if round < MinReviewRounds {
+				r.log.Log("JUDGE", "verdict clean at round %d — forcing fresh-eyes pass (min %d rounds)", round, MinReviewRounds)
+			} else {
+				r.log.Log("JUDGE", "no more work needed — marking %s as done", story.Key)
+				if err := r.ensureStatus(ctx, story.Key, "done"); err != nil {
+					return "", err
+				}
+				return "done", nil
 			}
-			return "done", nil
 		}
 
 		if round == MaxReviewRounds {
@@ -353,6 +381,29 @@ func (r *Runner) ensureStatus(ctx context.Context, storyKey, newStatus string) e
 	return nil
 }
 
+// auditDeferred scans deferred-work.md for open items whose target story
+// already reached a terminal state (done/validated). These are either
+// reviewer oversights (forgot to close the item) or scope drift (the item
+// actually belongs to a different story). Logged as warnings so a human can
+// reconcile during the next sprint review — never fatal, since the ledger
+// is advisory.
+func (r *Runner) auditDeferred(sprintStatus SprintStatus) {
+	orphans, err := ScanDeferredOrphans(r.cfg.Workdir, sprintStatus)
+	if err != nil {
+		r.log.Log("DEFERRED", "audit skipped: %v", err)
+		return
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	r.log.Log("DEFERRED", "%d open item(s) whose target story is already %s — reconcile manually:",
+		len(orphans), "done/validated")
+	for _, o := range orphans {
+		r.log.Log("DEFERRED", "  line %d → story %s (%s): %s",
+			o.SourceLine, o.TargetStory, o.TargetStatus, o.ItemText)
+	}
+}
+
 // blockStory marks a story as "blocked" and logs the reason.
 func (r *Runner) blockStory(ctx context.Context, storyKey, reason string) (string, error) {
 	r.log.Log("BLOCKED", "%s — %s", storyKey, reason)
@@ -367,7 +418,7 @@ func (r *Runner) runStep(ctx context.Context, storyKey string, action Action, ro
 	if err != nil {
 		return ExecResult{}, "", "", err
 	}
-	r.log.Log("ACTION", "%s", action.WorkflowKey)
+	r.log.Log("ACTION", "%s — %s", action.WorkflowKey, storyKey)
 	r.log.LogRaw("  status(before): %s", beforeStatus)
 
 	commandCtx := ctx

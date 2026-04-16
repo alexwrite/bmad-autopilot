@@ -154,6 +154,49 @@ func TestNextPendingStoryInEpics(t *testing.T) {
 	}
 }
 
+func TestNextPendingStorySkipsTerminalStates(t *testing.T) {
+	// Regression: NextPendingStoryInEpics used to skip only "validated",
+	// which caused the runner to re-select "done" stories in a tight loop
+	// (observed as 91 back-to-back reviews on story 1-1).
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "sprint-status.yaml")
+	content := `
+1-1-story-a: done
+1-2-story-b: validated
+1-3-story-c: blocked
+1-4-story-d: review
+2-1-story-e: backlog
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	got, err := LoadSprintStatus(path)
+	if err != nil {
+		t.Fatalf("load sprint status: %v", err)
+	}
+
+	next, ok := got.NextPendingStoryInEpics(nil)
+	if !ok {
+		t.Fatal("expected a next story")
+	}
+	if next.Key != "1-4-story-d" {
+		t.Fatalf("expected first non-terminal story 1-4-story-d, got %s", next.Key)
+	}
+
+	// Epic 1 filter still finds the review story, terminal ones are skipped.
+	next, ok = got.NextPendingStoryInEpics([]int{1})
+	if !ok || next.Key != "1-4-story-d" {
+		t.Fatalf("expected 1-4-story-d for epic 1, got %v %s", ok, next.Key)
+	}
+
+	// Epic 2 filter returns the backlog story.
+	next, ok = got.NextPendingStoryInEpics([]int{2})
+	if !ok || next.Key != "2-1-story-e" {
+		t.Fatalf("expected 2-1-story-e for epic 2, got %v %s", ok, next.Key)
+	}
+}
+
 func TestParseEpicFilter(t *testing.T) {
 	tests := []struct {
 		input string

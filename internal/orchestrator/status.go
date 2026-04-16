@@ -93,12 +93,16 @@ func (s SprintStatus) FindStoriesByNumbers(numbers []string) []Story {
 	return result
 }
 
-// NextPendingStoryInEpics returns the first non-done story belonging to the
-// given epic numbers. If epicFilter is nil or empty, all stories are considered.
+// NextPendingStoryInEpics returns the first non-terminal story belonging to
+// the given epic numbers. Terminal states (done, validated, blocked) are
+// skipped so the runner doesn't re-select work that has already settled —
+// blocked stories need human intervention before being retried.
+// If epicFilter is nil or empty, all stories are considered.
 func (s SprintStatus) NextPendingStoryInEpics(epicFilter []int) (Story, bool) {
 	filterSet := makeEpicFilterSet(epicFilter)
 	for _, story := range s.Stories {
-		if normalizeStatus(story.Status) == "validated" {
+		switch normalizeStatus(story.Status) {
+		case "done", "validated", "blocked":
 			continue
 		}
 		if len(filterSet) > 0 {

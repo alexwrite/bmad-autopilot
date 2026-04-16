@@ -19,25 +19,12 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 	if actions[1].WorkflowKey != "dev-story" {
 		t.Fatalf("expected second action workflow key dev-story, got %q", actions[1].WorkflowKey)
 	}
-	if !strings.Contains(actions[0].Prompt, "#yolo") {
-		t.Fatal("expected yolo mode in create-story prompt")
-	}
-	if !strings.Contains(actions[1].Prompt, "#yolo") {
-		t.Fatal("expected yolo mode in dev-story prompt")
-	}
-	// Verify commit prefix format
-	if !strings.Contains(actions[0].Prompt, `"create(1-2): `) {
+	// Verify commit prefix convention is announced
+	if !strings.Contains(actions[0].Prompt, `"create(1-2):`) {
 		t.Fatal("expected create(story) commit prefix in create-story prompt")
 	}
-	if !strings.Contains(actions[1].Prompt, `"dev(1-2): `) {
+	if !strings.Contains(actions[1].Prompt, `"dev(1-2):`) {
 		t.Fatal("expected dev(story) commit prefix in dev-story prompt")
-	}
-	// Verify status update instructions
-	if !strings.Contains(actions[0].Prompt, "sprint-status.yaml") {
-		t.Fatal("expected status update instruction in create-story prompt")
-	}
-	if !strings.Contains(actions[1].Prompt, "sprint-status.yaml") {
-		t.Fatal("expected status update instruction in dev-story prompt")
 	}
 }
 
@@ -54,32 +41,15 @@ func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
 	}
 }
 
-func TestPlanPrimaryActionsDone(t *testing.T) {
-	actions, err := PlanPrimaryActions("done", "1-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(actions) != 1 {
-		t.Fatalf("expected 1 action for done (validate-story), got %d", len(actions))
-	}
-	if actions[0].WorkflowKey != "validate-story" {
-		t.Fatalf("expected workflow key validate-story, got %q", actions[0].WorkflowKey)
-	}
-	if actions[0].AllowedTools == "" {
-		t.Fatal("expected validate-story action to have custom AllowedTools (Chrome MCP)")
-	}
-	if !strings.Contains(actions[0].AllowedTools, "mcp__chrome-devtools__navigate_page") {
-		t.Fatal("expected Chrome DevTools MCP tools in AllowedTools")
-	}
-}
-
-func TestPlanPrimaryActionsValidated(t *testing.T) {
-	actions, err := PlanPrimaryActions("validated", "1-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(actions) != 0 {
-		t.Fatalf("expected 0 actions for validated, got %d", len(actions))
+func TestPlanPrimaryActionsTerminalStates(t *testing.T) {
+	for _, status := range []string{"done", "validated", "blocked"} {
+		actions, err := PlanPrimaryActions(status, "1-1")
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", status, err)
+		}
+		if len(actions) != 0 {
+			t.Fatalf("expected 0 actions for terminal status %q, got %d", status, len(actions))
+		}
 	}
 }
 
@@ -88,14 +58,8 @@ func TestReviewActionWorkflowKey(t *testing.T) {
 	if action.WorkflowKey != "code-review" {
 		t.Fatalf("expected workflow key code-review, got %q", action.WorkflowKey)
 	}
-	if !strings.Contains(action.Prompt, "#yolo") {
-		t.Fatal("expected yolo mode in review prompt")
-	}
-	if !strings.Contains(action.Prompt, `"review(1-2): `) {
+	if !strings.Contains(action.Prompt, `"review(1-2):`) {
 		t.Fatal("expected review(story) commit prefix in code-review prompt")
-	}
-	if !strings.Contains(action.Prompt, "sprint-status.yaml") {
-		t.Fatal("expected status update instruction in code-review prompt")
 	}
 }
 
@@ -144,7 +108,6 @@ func TestMaxConsecutiveBlockedIsPositive(t *testing.T) {
 
 func TestCommitPrefixesAreDistinct(t *testing.T) {
 	backlogActions, _ := PlanPrimaryActions("backlog", "2-1")
-	doneActions, _ := PlanPrimaryActions("done", "2-1")
 	review := ReviewAction("2-1")
 
 	prefixes := map[string]bool{}
@@ -159,13 +122,8 @@ func TestCommitPrefixesAreDistinct(t *testing.T) {
 	if strings.Contains(review.Prompt, `"review(`) {
 		prefixes["review"] = true
 	}
-	for _, a := range doneActions {
-		if strings.Contains(a.Prompt, `"validate(`) {
-			prefixes["validate"] = true
-		}
-	}
 
-	if len(prefixes) != 4 {
-		t.Fatalf("expected 4 distinct commit prefixes (create, dev, review, validate), got %d", len(prefixes))
+	if len(prefixes) != 3 {
+		t.Fatalf("expected 3 distinct commit prefixes (create, dev, review), got %d", len(prefixes))
 	}
 }

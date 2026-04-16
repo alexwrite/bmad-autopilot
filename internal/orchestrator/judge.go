@@ -214,8 +214,6 @@ func defaultStatusForWorkflow(workflowKey string) string {
 		return "review"
 	case "code-review":
 		return "done"
-	case "validate-story":
-		return "validated"
 	default:
 		return "in-progress"
 	}
