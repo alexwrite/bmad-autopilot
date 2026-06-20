@@ -10,10 +10,10 @@ import (
 func writeDeferredFile(t *testing.T, workdir, content string) {
 	t.Helper()
 	dir := filepath.Join(workdir, "_bmad-output", "implementation-artifacts")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "deferred-work.md"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "deferred-work.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 }

@@ -284,7 +284,7 @@ func UpdateStoryStatus(path, storyKey, newStatus string) error {
 		return fmt.Errorf("story key %q not found in sprint status file", storyKey)
 	}
 
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 // GitCommitStatusUpdate stages and commits the sprint-status.yaml change

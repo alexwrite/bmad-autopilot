@@ -22,7 +22,7 @@ func NewRunLogger(workdir string) (*RunLogger, error) {
 	ts := time.Now().Format("2006-01-02T15-04-05")
 	runDir := filepath.Join(workdir, "_bmad-output", "autopilot-logs", ts)
 
-	if err := os.MkdirAll(runDir, 0755); err != nil {
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)
 	}
 
@@ -88,7 +88,7 @@ func (l *RunLogger) LogSeparator() {
 // Creates: {runDir}/{storyKey}/
 func (l *RunLogger) SetStory(storyKey string) error {
 	l.storyDir = filepath.Join(l.runDir, storyKey)
-	return os.MkdirAll(l.storyDir, 0755)
+	return os.MkdirAll(l.storyDir, 0o755)
 }
 
 // actionDir creates and returns the directory for a specific action.
@@ -99,7 +99,7 @@ func (l *RunLogger) actionDir(workflowKey string, round int) (string, error) {
 		name = fmt.Sprintf("%s-%d", workflowKey, round)
 	}
 	dir := filepath.Join(l.storyDir, name)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -111,7 +111,7 @@ func (l *RunLogger) SaveOutput(workflowKey string, round int, rawOutput string) 
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "output.txt"), []byte(rawOutput), 0644)
+	return os.WriteFile(filepath.Join(dir, "output.txt"), []byte(rawOutput), 0o644)
 }
 
 // SaveStream saves the full stream-json output (thinking, tool calls, text)
@@ -125,7 +125,7 @@ func (l *RunLogger) SaveStream(workflowKey string, round int, stream string) err
 		return err
 	}
 	jsonlPath := filepath.Join(dir, "stream.jsonl")
-	if err := os.WriteFile(jsonlPath, []byte(stream), 0644); err != nil {
+	if err := os.WriteFile(jsonlPath, []byte(stream), 0o644); err != nil {
 		return err
 	}
 	// Generate readable version (best-effort, non-fatal)
@@ -143,7 +143,7 @@ func (l *RunLogger) SaveResult(workflowKey string, round int, data interface{}) 
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "result.json"), jsonBytes, 0644)
+	return os.WriteFile(filepath.Join(dir, "result.json"), jsonBytes, 0o644)
 }
 
 // SaveVerdict saves a judge verdict as JSON.
@@ -156,7 +156,7 @@ func (l *RunLogger) SaveVerdict(round int, verdict JudgeVerdict) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "verdict.json"), jsonBytes, 0644)
+	return os.WriteFile(filepath.Join(dir, "verdict.json"), jsonBytes, 0o644)
 }
 
 // SaveError saves an error to a file.
@@ -166,7 +166,7 @@ func (l *RunLogger) SaveError(workflowKey string, round int, errMsg string) erro
 		return err
 	}
 	content := fmt.Sprintf("timestamp: %s\nerror: %s\n", time.Now().Format(time.RFC3339), errMsg)
-	return os.WriteFile(filepath.Join(dir, "error.txt"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(dir, "error.txt"), []byte(content), 0o644)
 }
 
 // StepResult captures structured info about a completed step.

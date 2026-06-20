@@ -75,7 +75,8 @@ func (b *GLM5Brain) Summarize(ctx context.Context, command, rawOutput string) (s
 			},
 			{
 				Role: zai.RoleUser,
-				Content: fmt.Sprintf("Command:\n%s\n\nOutput:\n%s",
+				Content: fmt.Sprintf(
+					"Command:\n%s\n\nOutput:\n%s",
 					command,
 					rawOutput,
 				),

@@ -34,13 +34,13 @@ type streamMsg struct {
 
 // contentBlock represents a content block inside a message.
 type contentBlock struct {
-	Type     string `json:"type"`
-	Text     string `json:"text"`
-	Thinking string `json:"thinking"`
-	Name     string `json:"name"`  // tool_use
-	ID       string `json:"id"`    // tool_use
-	Input    json.RawMessage `json:"input"` // tool_use
-	Content  string `json:"content"` // tool_result
+	Type     string          `json:"type"`
+	Text     string          `json:"text"`
+	Thinking string          `json:"thinking"`
+	Name     string          `json:"name"`    // tool_use
+	ID       string          `json:"id"`      // tool_use
+	Input    json.RawMessage `json:"input"`   // tool_use
+	Content  string          `json:"content"` // tool_result
 }
 
 // FormatStream reads a stream.jsonl file and writes a human-readable markdown version.
