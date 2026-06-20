@@ -22,7 +22,8 @@ type Config struct {
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
 	EpicFilter           []int
-	StoryFilter          []string // specific story numbers to process (e.g. ["2-1", "2-3"])
+	StoryFilter          []string    // specific story numbers to process (e.g. ["2-1", "2-3"])
+	StopChecker          StopChecker // optional graceful-stop signal; nil = never stops
 }
 
 type Runner struct {
@@ -30,6 +31,7 @@ type Runner struct {
 	brain    brain.Brain
 	executor CommandExecutor
 	log      *RunLogger
+	stop     StopChecker
 }
 
 const defaultStatusFile = "_bmad-output/implementation-artifacts/sprint-status.yaml"
@@ -73,6 +75,7 @@ func New(cfg Config) (*Runner, error) {
 		brain:    selectedBrain,
 		executor: newRetryingExecutor(baseExecutor, DefaultRetryConfig(), logger),
 		log:      logger,
+		stop:     withDefaultStopChecker(cfg.StopChecker),
 	}, nil
 }
 
@@ -85,6 +88,17 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	return r.runLoop(ctx)
+}
+
+// stopRequested reports whether a graceful stop was requested, logging once at
+// the boundary where the runner honors it. The runner exits cleanly (nil)
+// after the current step rather than aborting an in-flight `claude` call.
+func (r *Runner) stopRequested() bool {
+	if r.stop.StopRequested() {
+		r.log.Log("STOP", "graceful stop requested — exiting at safe boundary")
+		return true
+	}
+	return false
 }
 
 // runStoryFilter processes only the explicitly requested stories (--story flag).
@@ -102,6 +116,10 @@ func (r *Runner) runStoryFilter(ctx context.Context) error {
 	}
 
 	for _, story := range stories {
+		if r.stopRequested() {
+			return nil
+		}
+
 		storyNumber, err := StoryNumberFromKey(story.Key)
 		if err != nil {
 			return err
@@ -149,6 +167,10 @@ func (r *Runner) runLoop(ctx context.Context) error {
 	}
 
 	for {
+		if r.stopRequested() {
+			return nil
+		}
+
 		sprintStatus, err := LoadSprintStatus(r.cfg.StatusFile)
 		if err != nil {
 			return err
@@ -222,6 +244,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 	}
 
 	for _, action := range primaryActions {
+		if r.stopRequested() {
+			return "stopped", nil
+		}
 		if invocations >= MaxInvocationsPerStory {
 			return r.blockStory(ctx, story.Key, "max invocations reached during primary actions")
 		}
@@ -272,6 +297,9 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 
 	reviewAction := ReviewAction(storyNumber)
 	for round := 1; round <= MaxReviewRounds; round++ {
+		if r.stopRequested() {
+			return "stopped", nil
+		}
 		if invocations >= MaxInvocationsPerStory {
 			return r.blockStory(ctx, story.Key, "max invocations reached during review")
 		}

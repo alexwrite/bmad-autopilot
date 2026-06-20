@@ -22,6 +22,20 @@ Defaults:
 - BMAD context: the workflow itself runs as a native Claude Code skill (`.claude/skills/bmad-*/`); the autopilot only injects a small autonomy overlay via `--append-system-prompt` in #yolo mode
 - Logging: each action prints the raw Claude output block plus a one-line summarized `RESULT` (enabled by default)
 
+## Stopping a run
+
+The autopilot is built to run unattended, so stopping is two-stage and never
+leaves a half-finished step:
+
+- **First `Ctrl+C` / `SIGTERM`**: graceful stop. The current `claude` step is
+  allowed to finish (commit + push intact), then the loop exits cleanly at the
+  next step boundary.
+- **Second `Ctrl+C` / `SIGTERM`**: hard abort. Cancels the in-flight command
+  immediately.
+
+This works headless (no TTY required): send the signal with `kill`, a process
+manager, or `docker stop`.
+
 ## Epic filtering
 
 By default, the autopilot processes **all** stories in order. Use `--epics` to target specific epics:

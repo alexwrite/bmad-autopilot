@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 
 	"github.com/alexwrite/bmad-autopilot/internal/orchestrator"
@@ -17,6 +18,15 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Two-stage Ctrl+C / SIGTERM: first signal stops gracefully at the
+			// next step boundary, second aborts the in-flight command.
+			runCtx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			stop := orchestrator.NewStopController()
+			cleanup := installSignalStop(stop, cancel, cmd.ErrOrStderr())
+			defer cleanup()
+
 			runner, err := orchestrator.New(orchestrator.Config{
 				StatusFile:           opts.statusFile,
 				Brain:                opts.brain,
@@ -28,11 +38,12 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 				DisableCommandOutput: !opts.showCommandOutput,
 				EpicFilter:           epicFilter,
 				StoryFilter:          parseStoryFilter(opts.stories),
+				StopChecker:          stop,
 			})
 			if err != nil {
 				return err
 			}
-			return runner.Run(cmd.Context())
+			return runner.Run(runCtx)
 		},
 	}
 }
