@@ -19,7 +19,7 @@ Defaults:
 - Timeout: disabled
 - Claude model: unset (uses CLI default)
 - Claude execution: fresh subprocess per command, with `--dangerously-skip-permissions --output-format json`
-- BMAD context: full workflow chain injected via `--append-system-prompt` in #yolo mode
+- BMAD context: the workflow itself runs as a native Claude Code skill (`.claude/skills/bmad-*/`); the autopilot only injects a small autonomy overlay via `--append-system-prompt` in #yolo mode
 - Logging: each action prints the raw Claude output block plus a one-line summarized `RESULT` (enabled by default)
 
 ## Epic filtering
@@ -41,14 +41,20 @@ The autopilot stops once all stories in the selected epics are done.
 
 ## BMAD version compatibility
 
-Targets **BMAD v6.3.x** exclusively. The autopilot loads workflow context
-from the v6.3 skill layout (`.claude/skills/bmad-*/`) and aborts with a
-clear error if it detects an older install via `_bmad/_config/manifest.yaml`.
+Targets **BMAD v6.8.x** exclusively. Since v6.8, BMAD workflows are native
+Claude Code skills: the whole workflow lives inside each
+`.claude/skills/bmad-*/SKILL.md`, and the skill resolves its own
+customization (TOML) and config at runtime. The autopilot therefore
+**delegates** execution — it names the skill (e.g. `/bmad-dev-story`) and lets
+Claude load and run it natively, instead of reading and injecting the skill
+body itself. It only adds a small autonomy overlay (one commit per step,
+resolve HALT/ASK autonomously, security-first decisions).
 
-To add support for a future BMAD major/minor line, extend
-`isSupportedVersion` and the skill-loading logic in
-`internal/orchestrator/bmad.go` — no retro-compat path is maintained for
-v6.0/v6.1/v6.2.
+It detects the install version via `_bmad/_config/manifest.yaml` and aborts
+with a clear error on any non-6.8 install rather than driving an unknown
+skill contract. To support a future BMAD line, verify the skill contract is
+compatible, then bump `SupportedBMADMajor` in
+`internal/orchestrator/bmad.go`.
 
 ## Useful flags
 

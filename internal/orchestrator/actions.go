@@ -32,10 +32,11 @@ type Action struct {
 // only decides which skill to trigger based on the current status snapshot.
 //
 // Status lifecycle (entirely BMAD-managed):
-//   backlog        → create-story transitions to ready-for-dev
-//   ready-for-dev  → dev-story transitions to review
-//   review         → code-review transitions to done (handled by loop, not here)
-//   done / blocked → terminal, autopilot stops
+//
+//	backlog        → create-story transitions to ready-for-dev
+//	ready-for-dev  → dev-story transitions to review
+//	review         → code-review transitions to done (handled by loop, not here)
+//	done / blocked → terminal, autopilot stops
 func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
 	switch normalizeStatus(status) {
 	case "backlog":
@@ -67,7 +68,8 @@ func ReviewAction(storyNumber string) Action {
 	return newAction(
 		"code-review",
 		fmt.Sprintf(
-			`Execute bmad-code-review for story %s. Follow the embedded workflow.
+			`Run the /bmad-code-review skill for story %s. Load it from
+.claude/skills/ and execute its embedded <workflow> step by step.
 
 Review mindset: grey-hat security researcher. Focus OWASP Top 10
 (injection, broken auth, IDOR, SSRF, crypto, data exposure,
@@ -86,7 +88,8 @@ func createStoryAction(storyNumber string) Action {
 	return newAction(
 		"create-story",
 		fmt.Sprintf(
-			`Execute bmad-create-story for story %s. Follow the embedded workflow.
+			`Run the /bmad-create-story skill for story %s. Load it from
+.claude/skills/ and execute its embedded <workflow> step by step.
 Commits follow the "create(%s): <description>" convention. Push when done.`,
 			storyNumber, storyNumber,
 		),
@@ -97,7 +100,8 @@ func devStoryAction(storyNumber string) Action {
 	return newAction(
 		"dev-story",
 		fmt.Sprintf(
-			`Execute bmad-dev-story for story %s. Follow the embedded workflow.
+			`Run the /bmad-dev-story skill for story %s. Load it from
+.claude/skills/ and execute its embedded <workflow> step by step.
 Commits follow the "dev(%s): <description>" convention. Push when done.`,
 			storyNumber, storyNumber,
 		),
@@ -107,7 +111,7 @@ Commits follow the "dev(%s): <description>" convention. Push when done.`,
 func newAction(workflowKey, prompt string) Action {
 	return Action{
 		Prompt:      prompt,
-		Command:     fmt.Sprintf("claude -p [bmad-%s skill] --dangerously-skip-permissions --append-system-prompt [BMAD context]", workflowKey),
+		Command:     fmt.Sprintf("claude -p [/bmad-%s skill] --dangerously-skip-permissions --append-system-prompt [autonomy overlay]", workflowKey),
 		WorkflowKey: workflowKey,
 	}
 }

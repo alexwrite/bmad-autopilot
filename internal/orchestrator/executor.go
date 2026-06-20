@@ -70,11 +70,11 @@ type claudeJSONResponse struct {
 
 // ClaudeExecutor spawns `claude -p` as a subprocess with BMAD context injection.
 type ClaudeExecutor struct {
-	workdir       string
-	claudeModel   string
-	claudeCmd     string
-	claudeEffort  string // global override; empty = use per-workflow defaults
-	allowedTools  string
+	workdir      string
+	claudeModel  string
+	claudeCmd    string
+	claudeEffort string // global override; empty = use per-workflow defaults
+	allowedTools string
 }
 
 func NewClaudeExecutor(workdir, claudeModel, claudeCmd, claudeEffort string) *ClaudeExecutor {
@@ -120,13 +120,16 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 		args = append(args, "--effort", effort)
 	}
 
-	// Load and inject BMAD context if workflow key is set
+	// Validate the BMAD install and inject the autonomy overlay. The skill
+	// body itself is loaded natively by Claude from .claude/skills/ — the
+	// autopilot only adds its autonomy/commit/security overlay on top. An
+	// unsupported version or a missing skill fails here with a clear message.
 	if action.WorkflowKey != "" {
 		bmadCtx, err := LoadBMADContext(e.workdir, action.WorkflowKey)
 		if err != nil {
 			return ExecResult{}, fmt.Errorf("load BMAD context for %q: %w", action.WorkflowKey, err)
 		}
-		if bmadCtx != nil && bmadCtx.HasContent() {
+		if bmadCtx != nil {
 			args = append(args, "--append-system-prompt", bmadCtx.SystemPrompt())
 		}
 	}

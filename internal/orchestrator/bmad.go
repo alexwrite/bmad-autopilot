@@ -8,41 +8,32 @@ import (
 )
 
 // SupportedBMADMajor is the BMAD major.minor this autopilot targets.
-// Today we support v6.3 exclusively. To add a new major or minor, extend
-// isSupportedVersion() and provide a dedicated loader if the skill layout
-// ever diverges from the current "<project>/.claude/skills/bmad-*/" pattern.
-const SupportedBMADMajor = "6.3"
+// Pinned to v6.8. Since v6.8 the autopilot delegates workflow execution to
+// BMAD's native Claude Code skills — it no longer reads or parses skill
+// internals — so this guard is the only remaining version coupling. A new
+// BMAD line that changes the skill contract should bump this deliberately
+// after a compatibility check, not silently drive an unknown format.
+const SupportedBMADMajor = "6.8"
 
-// workflowSpec maps an action to the BMAD skill it should invoke.
-// In v6.3, every BMAD workflow is backed by a Claude Code skill whose
-// instructions live under .claude/skills/bmad-<skill>/. The autopilot
-// injects those instructions verbatim so Claude executes the workflow
-// without relying on its own skill auto-discovery.
+// workflowSpec maps an autopilot action to the BMAD skill it triggers.
+// In v6.8 every BMAD workflow IS a native Claude Code skill living under
+// .claude/skills/bmad-<skill>/. The autopilot names the skill in the prompt
+// and lets Claude load and run it natively. It deliberately does NOT read the
+// skill body, resolve its customization TOML, or interpolate its config —
+// that is the skill's own job at runtime (it ships a resolver script and its
+// own persona). Re-implementing that in Go would duplicate what Claude already
+// does natively.
 type workflowSpec struct {
-	skill      string // skill directory name under .claude/skills/
-	agentSkill string // companion agent skill (persona) — empty if none
-	effort     string // default Claude --effort level (low, medium, high, max)
+	skill  string // skill directory name under .claude/skills/
+	effort string // default Claude --effort level (low, medium, high, max)
 }
 
-// Workflow registry: every action the autopilot can fire maps to a v6.3 skill.
-// Note: BMAD v6.3 ships no "validate-story" skill — code-review is the final
-// gate. If a dedicated validation skill is introduced later, add it here.
+// Workflow registry: every action the autopilot can fire maps to a v6.8 skill.
+// Note: BMAD ships no "validate-story" skill — code-review is the final gate.
 var workflowRegistry = map[string]workflowSpec{
-	"create-story": {
-		skill:      "bmad-create-story",
-		agentSkill: "bmad-agent-sm",
-		effort:     "max",
-	},
-	"dev-story": {
-		skill:      "bmad-dev-story",
-		agentSkill: "bmad-agent-dev",
-		effort:     "max",
-	},
-	"code-review": {
-		skill:      "bmad-code-review",
-		agentSkill: "bmad-agent-dev",
-		effort:     "high",
-	},
+	"create-story": {skill: "bmad-create-story", effort: "max"},
+	"dev-story":    {skill: "bmad-dev-story", effort: "max"},
+	"code-review":  {skill: "bmad-code-review", effort: "high"},
 }
 
 // DefaultEffort returns the default effort level for a workflow key.
@@ -58,23 +49,20 @@ func DefaultEffort(workflowKey string) string {
 // Judges perform structured evaluation, not complex reasoning.
 const JudgeEffort = "low"
 
-// BMADContext carries the v6.3 skill material needed to drive a workflow.
+// BMADContext is the minimal handle the autopilot needs to drive a v6.8
+// native skill: the detected install version (for logging) and the skill
+// name to invoke. The skill body is never read — Claude Code loads it
+// natively from .claude/skills/ and resolves its own TOML and config.
 type BMADContext struct {
-	Version     string // detected BMAD installation version (e.g. "6.3.0")
-	SkillName   string // fully qualified skill name (e.g. "bmad-dev-story")
-	SkillDoc    string // SKILL.md frontmatter + pointer
-	Workflow    string // workflow.md body (the real instructions)
-	Checklist   string // checklist.md body, if present
-	AgentName   string // fully qualified agent skill (e.g. "bmad-agent-dev")
-	AgentDoc    string // agent SKILL.md body — the persona
-	ModuleCfg   string // _bmad/bmm/config.yaml — user-level BMAD settings
+	Version   string // detected BMAD installation version (e.g. "6.8.0")
+	SkillName string // skill directory name to invoke (e.g. "bmad-dev-story")
 }
 
-// LoadBMADContext reads the BMAD skill files for a given workflow key.
-// Returns nil (no error) if _bmad/ does not exist — caller falls back to
-// generic prompts. Returns an error if the installation is present but at
-// an unsupported version, so callers can surface a clear upgrade message
-// instead of silently producing broken prompts.
+// LoadBMADContext validates the BMAD install for a given workflow key.
+// Returns nil (no error) if _bmad/ does not exist — the caller falls back to
+// generic prompts. Returns an error if the installation is present but at an
+// unsupported version, or if the backing skill is not installed, so callers
+// can surface a clear message instead of driving a broken workflow.
 func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
 	bmadRoot := filepath.Join(workdir, "_bmad")
 
@@ -89,7 +77,7 @@ func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
 	if !isSupportedVersion(version) {
 		return nil, fmt.Errorf(
 			"unsupported BMAD version %q in %s — autopilot targets v%s.x; "+
-				"upgrade with `npx bmad-method install` or pin an older autopilot release",
+				"upgrade with `npx bmad-method install` or pin a matching autopilot release",
 			version, bmadRoot, SupportedBMADMajor,
 		)
 	}
@@ -107,60 +95,24 @@ func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
 		)
 	}
 
-	moduleCfg := readFileContent(filepath.Join(bmadRoot, "bmm", "config.yaml"))
-	skillDoc := readFileContent(filepath.Join(skillDir, "SKILL.md"))
-	workflow := readFileContent(filepath.Join(skillDir, "workflow.md"))
-	checklist := readFileContent(filepath.Join(skillDir, "checklist.md"))
-
-	var agentName, agentDoc string
-	if spec.agentSkill != "" {
-		agentDir := filepath.Join(workdir, ".claude", "skills", spec.agentSkill)
-		if doc := readFileContent(filepath.Join(agentDir, "SKILL.md")); doc != "" {
-			agentName = spec.agentSkill
-			agentDoc = doc
-		}
-	}
-
-	// Replace {project-root} with the actual absolute path so Claude
-	// can resolve file references during execution.
-	replacer := strings.NewReplacer("{project-root}", workdir)
-
-	return &BMADContext{
-		Version:   version,
-		SkillName: spec.skill,
-		SkillDoc:  replacer.Replace(skillDoc),
-		Workflow:  replacer.Replace(workflow),
-		Checklist: replacer.Replace(checklist),
-		AgentName: agentName,
-		AgentDoc:  replacer.Replace(agentDoc),
-		ModuleCfg: replacer.Replace(moduleCfg),
-	}, nil
+	return &BMADContext{Version: version, SkillName: spec.skill}, nil
 }
 
-// SystemPrompt builds the full system prompt to inject via --append-system-prompt.
-// The autopilot overlay is intentionally minimal: it only adds what BMAD's
-// interactive-by-default workflows cannot do on their own (autonomy, one commit
-// per step, security-first decision making). Everything else is delegated to
-// the BMAD skill content appended below.
+// SystemPrompt returns the autopilot overlay injected via
+// --append-system-prompt. It is intentionally minimal and version-agnostic:
+// it only adds what BMAD's interactive-by-default skills cannot infer on their
+// own (autonomy, one commit per step, security-first decisions). Everything
+// else — the actual workflow — is delegated to the native BMAD skill the
+// prompt names, which Claude loads and runs itself.
 func (ctx *BMADContext) SystemPrompt() string {
-	var sb strings.Builder
+	return autonomyOverlay
+}
 
-	writeSection := func(title, content string) {
-		if strings.TrimSpace(content) == "" {
-			return
-		}
-		sb.WriteString("\n=== ")
-		sb.WriteString(title)
-		sb.WriteString(" ===\n")
-		sb.WriteString(content)
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(`<mode>
+const autonomyOverlay = `<mode>
 You are running a BMAD workflow autonomously. No human interaction is
 possible: every HALT, ASK, or "waiting for your numbered choice" in the
-workflow must be resolved by making the right call at the right time,
-not by defaulting to a fallback option.
+skill must be resolved by making the right call at the right time, not by
+defaulting to a fallback option.
 </mode>
 
 <decisions>
@@ -191,34 +143,11 @@ reconstruct WHAT you did, HOW, and WHY from the story file alone.
 
 <bmad>
 For everything else — status transitions, File List, DoD, tests, findings,
-checklist, test rules — follow the BMAD workflow appended below strictly,
-to the letter.
+checklist, test rules — follow the BMAD skill you are running strictly, to
+the letter. Execute its embedded <workflow> step by step; run its
+customization resolver and load its config exactly as the skill instructs.
 </bmad>
-`)
-
-	writeSection("BMAD MODULE CONFIG", ctx.ModuleCfg)
-	if ctx.AgentDoc != "" {
-		writeSection(fmt.Sprintf("BMAD AGENT PERSONA (%s)", ctx.AgentName), ctx.AgentDoc)
-	}
-	writeSection(fmt.Sprintf("SKILL DECLARATION (%s/SKILL.md)", ctx.SkillName), ctx.SkillDoc)
-	writeSection("WORKFLOW INSTRUCTIONS (workflow.md)", ctx.Workflow)
-	writeSection("VALIDATION CHECKLIST (checklist.md)", ctx.Checklist)
-
-	return sb.String()
-}
-
-// HasContent returns true if the context has at least workflow instructions to execute.
-func (ctx *BMADContext) HasContent() bool {
-	return strings.TrimSpace(ctx.Workflow) != ""
-}
-
-func readFileContent(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
+`
 
 // detectBMADVersion reads _bmad/_config/manifest.yaml and extracts
 // installation.version. Returns "" if the manifest is missing or
@@ -236,7 +165,7 @@ func detectBMADVersion(bmadRoot string) (string, error) {
 	// key near the top. Avoid pulling in a YAML dep just for this.
 	//
 	// installation:
-	//   version: 6.3.0
+	//   version: 6.8.0
 	lines := strings.Split(string(manifest), "\n")
 	inInstallationBlock := false
 	for _, line := range lines {
@@ -258,8 +187,8 @@ func detectBMADVersion(bmadRoot string) (string, error) {
 }
 
 // isSupportedVersion returns true if the detected BMAD version is one the
-// autopilot can drive. Today that's v6.3.x only — extend here when a new
-// supported line is added.
+// autopilot can drive. Today that's v6.8.x only — bump SupportedBMADMajor
+// after checking a new line ships a compatible skill contract.
 func isSupportedVersion(version string) bool {
 	if version == "" {
 		// Unknown version: let the caller proceed optimistically. We'd rather
