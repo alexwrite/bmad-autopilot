@@ -9,7 +9,7 @@ import (
 
 func TestLoadBMADContextNoBmadDir(t *testing.T) {
 	dir := t.TempDir()
-	ctx, err := LoadBMADContext(dir, "dev-story")
+	ctx, err := LoadBMADContext(dir, "dev-story", "bmad-dev-story")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestLoadBMADContextNoBmadDir(t *testing.T) {
 
 func TestLoadBMADContextUnknownKey(t *testing.T) {
 	dir := setupTestBMAD(t, "6.8.0")
-	_, err := LoadBMADContext(dir, "nonexistent-workflow")
+	_, err := LoadBMADContext(dir, "nonexistent-workflow", "bmad-dev-story")
 	if err == nil {
 		t.Fatal("expected error for unknown workflow key")
 	}
@@ -30,7 +30,7 @@ func TestLoadBMADContextUnsupportedVersion(t *testing.T) {
 	// v6.3 was supported by older autopilot releases; pinned to 6.8 it is
 	// now rejected with a clear upgrade message instead of being driven blind.
 	dir := setupTestBMAD(t, "6.3.0")
-	_, err := LoadBMADContext(dir, "dev-story")
+	_, err := LoadBMADContext(dir, "dev-story", "bmad-dev-story")
 	if err == nil {
 		t.Fatal("expected error for unsupported BMAD version")
 	}
@@ -44,7 +44,7 @@ func TestLoadBMADContextMissingSkill(t *testing.T) {
 	// Remove the dev-story skill dir to simulate a partial install.
 	os.RemoveAll(filepath.Join(dir, ".claude", "skills", "bmad-dev-story"))
 
-	_, err := LoadBMADContext(dir, "dev-story")
+	_, err := LoadBMADContext(dir, "dev-story", "bmad-dev-story")
 	if err == nil {
 		t.Fatal("expected error when skill directory is missing")
 	}
@@ -56,7 +56,7 @@ func TestLoadBMADContextMissingSkill(t *testing.T) {
 func TestLoadBMADContextDevStory(t *testing.T) {
 	dir := setupTestBMAD(t, "6.8.0")
 
-	ctx, err := LoadBMADContext(dir, "dev-story")
+	ctx, err := LoadBMADContext(dir, "dev-story", "bmad-dev-story")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestLoadBMADContextDevStory(t *testing.T) {
 func TestLoadBMADContextCreateStory(t *testing.T) {
 	dir := setupTestBMAD(t, "6.8.0")
 
-	ctx, err := LoadBMADContext(dir, "create-story")
+	ctx, err := LoadBMADContext(dir, "create-story", "bmad-create-story")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,6 +83,33 @@ func TestLoadBMADContextCreateStory(t *testing.T) {
 	}
 	if ctx.SkillName != "bmad-create-story" {
 		t.Fatalf("expected SkillName bmad-create-story, got %q", ctx.SkillName)
+	}
+}
+
+func TestLoadBMADContextValidatesResolvedSkill(t *testing.T) {
+	dir := setupTestBMAD(t, "6.8.0")
+
+	// An override points dev-story at a different (but installed) skill. The
+	// validation must follow the resolved skill, not the registry default.
+	ctx, err := LoadBMADContext(dir, "dev-story", "bmad-code-review")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.SkillName != "bmad-code-review" {
+		t.Fatalf("expected resolved skill bmad-code-review, got %q", ctx.SkillName)
+	}
+}
+
+func TestLoadBMADContextOverrideMissingSkill(t *testing.T) {
+	dir := setupTestBMAD(t, "6.8.0")
+
+	// An override pointing at a skill that is not installed must fail clearly.
+	_, err := LoadBMADContext(dir, "dev-story", "bmad-does-not-exist")
+	if err == nil {
+		t.Fatal("expected error when overridden skill is not installed")
+	}
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("expected not-installed error, got: %v", err)
 	}
 }
 

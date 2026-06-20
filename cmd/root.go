@@ -19,6 +19,9 @@ type rootOptions struct {
 	showCommandOutput bool
 	epics             string
 	stories           string
+	createStorySkill  string
+	devStorySkill     string
+	codeReviewSkill   string
 }
 
 // Execute runs the CLI entrypoint.
@@ -54,6 +57,9 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.claudeEffort, "effort", "", `Global effort level override for Claude (low, medium, high, max). Per-workflow defaults: create-story=max, dev-story=max, code-review=high, judge=low`)
 	cmd.PersistentFlags().StringVar(&opts.epics, "epics", "", `Epic filter: only process stories from these epics (e.g. "8", "15-21", "8,15-21")`)
 	cmd.PersistentFlags().StringVar(&opts.stories, "story", "", `Story filter: only process these specific stories (e.g. "2-1", "2-1,2-3,3-2")`)
+	cmd.PersistentFlags().StringVar(&opts.createStorySkill, "create-story-skill", "", "Override the create-story skill (default: bmad-create-story)")
+	cmd.PersistentFlags().StringVar(&opts.devStorySkill, "dev-story-skill", "", "Override the dev-story skill (default: bmad-dev-story)")
+	cmd.PersistentFlags().StringVar(&opts.codeReviewSkill, "code-review-skill", "", "Override the code-review skill (default: bmad-code-review)")
 
 	cmd.AddCommand(newRunCmd(opts))
 	return cmd

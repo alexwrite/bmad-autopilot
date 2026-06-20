@@ -39,6 +39,11 @@ func newRunCmd(opts *rootOptions) *cobra.Command {
 				EpicFilter:           epicFilter,
 				StoryFilter:          parseStoryFilter(opts.stories),
 				StopChecker:          stop,
+				SkillOverrides: orchestrator.SkillOverrides{
+					CreateStory: opts.createStorySkill,
+					DevStory:    opts.devStorySkill,
+					CodeReview:  opts.codeReviewSkill,
+				},
 			})
 			if err != nil {
 				return err

@@ -22,8 +22,9 @@ type Config struct {
 	CommandTimeout       time.Duration
 	DisableCommandOutput bool
 	EpicFilter           []int
-	StoryFilter          []string    // specific story numbers to process (e.g. ["2-1", "2-3"])
-	StopChecker          StopChecker // optional graceful-stop signal; nil = never stops
+	StoryFilter          []string       // specific story numbers to process (e.g. ["2-1", "2-3"])
+	StopChecker          StopChecker    // optional graceful-stop signal; nil = never stops
+	SkillOverrides       SkillOverrides // per-phase skill name overrides; empty fields use bmad-* defaults
 }
 
 type Runner struct {
@@ -238,7 +239,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 	invocations := 0
 
 	// --- Phase 1: Primary actions (create-story, dev-story) ---
-	primaryActions, err := PlanPrimaryActions(story.Status, storyNumber)
+	primaryActions, err := PlanPrimaryActions(story.Status, storyNumber, r.cfg.SkillOverrides)
 	if err != nil {
 		return "", err
 	}
@@ -295,7 +296,7 @@ func (r *Runner) processStory(ctx context.Context, story Story, storyNumber stri
 		return entryStatus, nil
 	}
 
-	reviewAction := ReviewAction(storyNumber)
+	reviewAction := ReviewAction(storyNumber, r.cfg.SkillOverrides)
 	for round := 1; round <= MaxReviewRounds; round++ {
 		if r.stopRequested() {
 			return "stopped", nil

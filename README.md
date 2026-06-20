@@ -80,3 +80,11 @@ compatible, then bump `SupportedBMADMajor` in
 - `--claude-command <path>` (default: `claude`)
 - `--show-command-output <true|false>` (default: `true`)
 - `--timeout <duration>` (use `0` to disable timeout)
+- `--create-story-skill <name>` — override the create-story skill (default: `bmad-create-story`)
+- `--dev-story-skill <name>` — override the dev-story skill (default: `bmad-dev-story`)
+- `--code-review-skill <name>` — override the code-review skill (default: `bmad-code-review`)
+
+The `--*-skill` overrides point a phase at a renamed, forked, or
+project-specific skill. A leading slash is optional (`/bmad-dev-story` ==
+`bmad-dev-story`). The overridden skill must be installed under
+`.claude/skills/<name>/`, or the run aborts with a clear error.

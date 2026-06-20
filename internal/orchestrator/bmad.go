@@ -58,12 +58,14 @@ type BMADContext struct {
 	SkillName string // skill directory name to invoke (e.g. "bmad-dev-story")
 }
 
-// LoadBMADContext validates the BMAD install for a given workflow key.
-// Returns nil (no error) if _bmad/ does not exist — the caller falls back to
-// generic prompts. Returns an error if the installation is present but at an
-// unsupported version, or if the backing skill is not installed, so callers
-// can surface a clear message instead of driving a broken workflow.
-func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
+// LoadBMADContext validates the BMAD install for a given workflow key and the
+// skill it resolves to (which may be a configured override, not the registry
+// default). Returns nil (no error) if _bmad/ does not exist — the caller falls
+// back to generic prompts. Returns an error if the install is present but at an
+// unsupported version, the workflow key is unknown, or the resolved skill is
+// not installed, so callers surface a clear message instead of driving a
+// broken workflow.
+func LoadBMADContext(workdir, workflowKey, skillName string) (*BMADContext, error) {
 	bmadRoot := filepath.Join(workdir, "_bmad")
 
 	if _, err := os.Stat(bmadRoot); os.IsNotExist(err) {
@@ -82,20 +84,22 @@ func LoadBMADContext(workdir, workflowKey string) (*BMADContext, error) {
 		)
 	}
 
-	spec, ok := workflowRegistry[workflowKey]
-	if !ok {
+	if _, ok := workflowRegistry[workflowKey]; !ok {
 		return nil, fmt.Errorf("unknown BMAD workflow key %q", workflowKey)
 	}
+	if strings.TrimSpace(skillName) == "" {
+		return nil, fmt.Errorf("no skill resolved for workflow %q", workflowKey)
+	}
 
-	skillDir := filepath.Join(workdir, ".claude", "skills", spec.skill)
+	skillDir := filepath.Join(workdir, ".claude", "skills", skillName)
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf(
-			"skill %q not installed at %s — reinstall BMAD with the matching module",
-			spec.skill, skillDir,
+			"skill %q not installed at %s — reinstall BMAD or fix the --*-skill override",
+			skillName, skillDir,
 		)
 	}
 
-	return &BMADContext{Version: version, SkillName: spec.skill}, nil
+	return &BMADContext{Version: version, SkillName: skillName}, nil
 }
 
 // SystemPrompt returns the autopilot overlay injected via

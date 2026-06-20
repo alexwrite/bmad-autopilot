@@ -1,6 +1,9 @@
 package orchestrator
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // MinReviewRounds is the floor of consecutive code-review iterations on a
 // single story. Even if the first pass comes back clean, a second fresh
@@ -23,8 +26,47 @@ const MaxConsecutiveBlocked = 2
 type Action struct {
 	Prompt       string
 	Command      string
-	WorkflowKey  string // maps to BMAD workflow in workflowRegistry
+	WorkflowKey  string // maps to BMAD workflow in workflowRegistry (effort, logging)
+	SkillName    string // resolved skill actually invoked (default or overridden), no leading slash
 	AllowedTools string // override default allowed tools (empty = use executor default)
+}
+
+// SkillOverrides lets an operator point a phase at a different or custom skill
+// than the bmad-* default (a renamed skill, a fork, a project-specific
+// variant). Empty fields fall back to the registry default. A leading slash
+// is accepted and stripped, so "/bmad-dev-story" and "bmad-dev-story" are
+// equivalent.
+type SkillOverrides struct {
+	CreateStory string
+	DevStory    string
+	CodeReview  string
+}
+
+// resolve returns the skill directory name to invoke for a workflow key:
+// the override when set, otherwise the registry default.
+func (o SkillOverrides) resolve(workflowKey string) string {
+	var override string
+	switch workflowKey {
+	case "create-story":
+		override = o.CreateStory
+	case "dev-story":
+		override = o.DevStory
+	case "code-review":
+		override = o.CodeReview
+	}
+	if normalized := normalizeSkillName(override); normalized != "" {
+		return normalized
+	}
+	if spec, ok := workflowRegistry[workflowKey]; ok {
+		return spec.skill
+	}
+	return ""
+}
+
+// normalizeSkillName trims spaces and a single leading slash so the skill name
+// matches its directory under .claude/skills/.
+func normalizeSkillName(name string) string {
+	return strings.TrimPrefix(strings.TrimSpace(name), "/")
 }
 
 // PlanPrimaryActions returns the sequence of BMAD skills to execute for a given
@@ -37,16 +79,16 @@ type Action struct {
 //	ready-for-dev  → dev-story transitions to review
 //	review         → code-review transitions to done (handled by loop, not here)
 //	done / blocked → terminal, autopilot stops
-func PlanPrimaryActions(status, storyNumber string) ([]Action, error) {
+func PlanPrimaryActions(status, storyNumber string, skills SkillOverrides) ([]Action, error) {
 	switch normalizeStatus(status) {
 	case "backlog":
 		return []Action{
-			createStoryAction(storyNumber),
-			devStoryAction(storyNumber),
+			createStoryAction(storyNumber, skills),
+			devStoryAction(storyNumber, skills),
 		}, nil
 	case "ready-for-dev", "in-progress":
 		return []Action{
-			devStoryAction(storyNumber),
+			devStoryAction(storyNumber, skills),
 		}, nil
 	case "review":
 		return nil, nil
@@ -64,11 +106,13 @@ func ShouldContinueReview(status string) bool {
 	return s != "done" && s != "blocked" && s != "validated"
 }
 
-func ReviewAction(storyNumber string) Action {
+func ReviewAction(storyNumber string, skills SkillOverrides) Action {
+	skill := skills.resolve("code-review")
 	return newAction(
 		"code-review",
+		skill,
 		fmt.Sprintf(
-			`Run the /bmad-code-review skill for story %s. Load it from
+			`Run the /%s skill for story %s. Load it from
 .claude/skills/ and execute its embedded <workflow> step by step.
 
 Review mindset: grey-hat security researcher. Focus OWASP Top 10
@@ -79,39 +123,44 @@ cosmetic noise (naming, formatting) unless it causes a real bug.
 
 Commit follows the "review(%s): <description>" convention at the
 very end. Push.`,
-			storyNumber, storyNumber,
+			skill, storyNumber, storyNumber,
 		),
 	)
 }
 
-func createStoryAction(storyNumber string) Action {
+func createStoryAction(storyNumber string, skills SkillOverrides) Action {
+	skill := skills.resolve("create-story")
 	return newAction(
 		"create-story",
+		skill,
 		fmt.Sprintf(
-			`Run the /bmad-create-story skill for story %s. Load it from
+			`Run the /%s skill for story %s. Load it from
 .claude/skills/ and execute its embedded <workflow> step by step.
 Commits follow the "create(%s): <description>" convention. Push when done.`,
-			storyNumber, storyNumber,
+			skill, storyNumber, storyNumber,
 		),
 	)
 }
 
-func devStoryAction(storyNumber string) Action {
+func devStoryAction(storyNumber string, skills SkillOverrides) Action {
+	skill := skills.resolve("dev-story")
 	return newAction(
 		"dev-story",
+		skill,
 		fmt.Sprintf(
-			`Run the /bmad-dev-story skill for story %s. Load it from
+			`Run the /%s skill for story %s. Load it from
 .claude/skills/ and execute its embedded <workflow> step by step.
 Commits follow the "dev(%s): <description>" convention. Push when done.`,
-			storyNumber, storyNumber,
+			skill, storyNumber, storyNumber,
 		),
 	)
 }
 
-func newAction(workflowKey, prompt string) Action {
+func newAction(workflowKey, skill, prompt string) Action {
 	return Action{
 		Prompt:      prompt,
-		Command:     fmt.Sprintf("claude -p [/bmad-%s skill] --dangerously-skip-permissions --append-system-prompt [autonomy overlay]", workflowKey),
+		Command:     fmt.Sprintf("claude -p [/%s skill] --dangerously-skip-permissions --append-system-prompt [autonomy overlay]", skill),
 		WorkflowKey: workflowKey,
+		SkillName:   skill,
 	}
 }

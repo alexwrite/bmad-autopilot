@@ -125,7 +125,7 @@ func (e *ClaudeExecutor) Run(ctx context.Context, action Action) (ExecResult, er
 	// autopilot only adds its autonomy/commit/security overlay on top. An
 	// unsupported version or a missing skill fails here with a clear message.
 	if action.WorkflowKey != "" {
-		bmadCtx, err := LoadBMADContext(e.workdir, action.WorkflowKey)
+		bmadCtx, err := LoadBMADContext(e.workdir, action.WorkflowKey, action.SkillName)
 		if err != nil {
 			return ExecResult{}, fmt.Errorf("load BMAD context for %q: %w", action.WorkflowKey, err)
 		}

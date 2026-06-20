@@ -6,7 +6,7 @@ import (
 )
 
 func TestPlanPrimaryActionsBacklog(t *testing.T) {
-	actions, err := PlanPrimaryActions("backlog", "1-2")
+	actions, err := PlanPrimaryActions("backlog", "1-2", SkillOverrides{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestPlanPrimaryActionsBacklog(t *testing.T) {
 }
 
 func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
-	actions, err := PlanPrimaryActions("ready-for-dev", "3-4")
+	actions, err := PlanPrimaryActions("ready-for-dev", "3-4", SkillOverrides{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestPlanPrimaryActionsReadyForDev(t *testing.T) {
 
 func TestPlanPrimaryActionsTerminalStates(t *testing.T) {
 	for _, status := range []string{"done", "validated", "blocked"} {
-		actions, err := PlanPrimaryActions(status, "1-1")
+		actions, err := PlanPrimaryActions(status, "1-1", SkillOverrides{})
 		if err != nil {
 			t.Fatalf("unexpected error for %q: %v", status, err)
 		}
@@ -54,12 +54,64 @@ func TestPlanPrimaryActionsTerminalStates(t *testing.T) {
 }
 
 func TestReviewActionWorkflowKey(t *testing.T) {
-	action := ReviewAction("1-2")
+	action := ReviewAction("1-2", SkillOverrides{})
 	if action.WorkflowKey != "code-review" {
 		t.Fatalf("expected workflow key code-review, got %q", action.WorkflowKey)
 	}
 	if !strings.Contains(action.Prompt, `"review(1-2):`) {
 		t.Fatal("expected review(story) commit prefix in code-review prompt")
+	}
+}
+
+// TestActionsDefaultSkills verifies that with no overrides, each action resolves
+// to its bmad-* default skill, both in SkillName and in the invoked prompt.
+func TestActionsDefaultSkills(t *testing.T) {
+	actions, _ := PlanPrimaryActions("backlog", "2-1", SkillOverrides{})
+	review := ReviewAction("2-1", SkillOverrides{})
+
+	cases := []struct {
+		action Action
+		skill  string
+	}{
+		{actions[0], "bmad-create-story"},
+		{actions[1], "bmad-dev-story"},
+		{review, "bmad-code-review"},
+	}
+	for _, c := range cases {
+		if c.action.SkillName != c.skill {
+			t.Fatalf("expected SkillName %q, got %q", c.skill, c.action.SkillName)
+		}
+		if !strings.Contains(c.action.Prompt, "/"+c.skill+" skill") {
+			t.Fatalf("expected prompt to invoke /%s", c.skill)
+		}
+	}
+}
+
+// TestActionsHonorOverrides verifies a configured override (with or without a
+// leading slash) flows into both the invoked skill and the validation handle.
+func TestActionsHonorOverrides(t *testing.T) {
+	overrides := SkillOverrides{
+		CreateStory: "/team-create", // leading slash should be stripped
+		DevStory:    "  team-dev  ", // surrounding space should be trimmed
+		CodeReview:  "",             // empty falls back to default
+	}
+	actions, _ := PlanPrimaryActions("backlog", "2-1", overrides)
+	review := ReviewAction("2-1", overrides)
+
+	if actions[0].SkillName != "team-create" {
+		t.Fatalf("expected create override team-create, got %q", actions[0].SkillName)
+	}
+	if actions[1].SkillName != "team-dev" {
+		t.Fatalf("expected dev override team-dev, got %q", actions[1].SkillName)
+	}
+	if review.SkillName != "bmad-code-review" {
+		t.Fatalf("expected empty override to fall back to default, got %q", review.SkillName)
+	}
+}
+
+func TestSkillOverridesResolveUnknownKey(t *testing.T) {
+	if got := (SkillOverrides{}).resolve("not-a-workflow"); got != "" {
+		t.Fatalf("expected empty resolution for unknown key, got %q", got)
 	}
 }
 
@@ -107,8 +159,8 @@ func TestMaxConsecutiveBlockedIsPositive(t *testing.T) {
 }
 
 func TestCommitPrefixesAreDistinct(t *testing.T) {
-	backlogActions, _ := PlanPrimaryActions("backlog", "2-1")
-	review := ReviewAction("2-1")
+	backlogActions, _ := PlanPrimaryActions("backlog", "2-1", SkillOverrides{})
+	review := ReviewAction("2-1", SkillOverrides{})
 
 	prefixes := map[string]bool{}
 	for _, a := range backlogActions {
